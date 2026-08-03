@@ -1,0 +1,40 @@
+app-id: io.github.roddy.SmolPlayer
+runtime: org.freedesktop.Platform
+runtime-version: "25.08"
+sdk: org.freedesktop.Sdk
+command: smolplayer
+finish-args:
+  - --share=ipc
+  - --socket=pulseaudio
+  - --filesystem=xdg-run/pipewire-0
+  - --filesystem=host
+  - --talk-name=org.mpris.MediaPlayer2.smolplayer
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.freedesktop.PowerManagement
+  - --talk-name=org.freedesktop.ScreenSaver
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --system-talk-name=org.freedesktop.login1
+  - --own-name=org.mpris.MediaPlayer2.smolplayer
+  - --own-name=org.mpris.MediaPlayer2.smolplayer.*
+  - --own-name=org.kde.StatusNotifierItem-*
+
+modules:
+  - python-deps.json
+
+  - name: smolplayer
+    buildsystem: simple
+    build-commands:
+      - install -D main.py /app/bin/smolplayer
+      - chmod +x /app/bin/smolplayer
+      - install -t /app/bin player.py mpris.py playlist.py utils.py tray.py config.py test_smolplayer.py
+      - install -D icon.svg /app/bin/icon.svg
+      - install -D icon.svg /app/share/icons/hicolor/scalable/apps/io.github.roddy.SmolPlayer.svg
+      - install -D icon-64.png /app/share/icons/hicolor/64x64/apps/io.github.roddy.SmolPlayer.png
+      - install -D icon-128.png /app/share/icons/hicolor/128x128/apps/io.github.roddy.SmolPlayer.png
+      - install -D icon-256.png /app/share/icons/hicolor/256x256/apps/io.github.roddy.SmolPlayer.png
+      - install -D icon-512.png /app/share/icons/hicolor/512x512/apps/io.github.roddy.SmolPlayer.png
+      - install -D io.github.roddy.SmolPlayer.desktop /app/share/applications/io.github.roddy.SmolPlayer.desktop
+      - install -D io.github.roddy.SmolPlayer.metainfo.xml /app/share/metainfo/io.github.roddy.SmolPlayer.metainfo.xml
+    sources:
+      - type: dir
+        path: .

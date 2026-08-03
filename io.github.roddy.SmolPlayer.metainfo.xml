@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.roddy.SmolPlayer</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>smolplayer</name>
+  <summary>A GUI-less MPRIS audio player using PipeWire and ffmpeg</summary>
+
+  <description>
+    <p>
+      smolplayer is a free and open source music player that has no GUI whatsoever,
+      leveraging the power of MPRIS.
+    </p>
+    <p>
+      Play a song in your file manager, and it will play completely in the background.
+      Control playback, seeking, volume, shuffle, and track navigation entirely from
+      your desktop environment's media controller widget.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.roddy.SmolPlayer.desktop</launchable>
+  <provides>
+    <mediatype>audio/mpeg</mediatype>
+    <mediatype>audio/flac</mediatype>
+    <mediatype>audio/ogg</mediatype>
+    <mediatype>audio/opus</mediatype>
+    <mediatype>audio/mp4</mediatype>
+    <mediatype>audio/wav</mediatype>
+    <mediatype>audio/x-wav</mediatype>
+    <mediatype>audio/x-matroska</mediatype>
+    <mediatype>audio/webm</mediatype>
+    <mediatype>audio/aac</mediatype>
+    <mediatype>audio/alac</mediatype>
+    <mediatype>audio/x-ape</mediatype>
+    <mediatype>audio/x-aiff</mediatype>
+    <mediatype>audio/aiff</mediatype>
+    <mediatype>audio/wma</mediatype>
+    <mediatype>audio/x-ms-wma</mediatype>
+    <mediatype>audio/x-flac</mediatype>
+    <mediatype>audio/x-mp3</mediatype>
+    <mediatype>audio/mp3</mediatype>
+    <mediatype>audio/x-vorbis+ogg</mediatype>
+    <mediatype>audio/x-opus+ogg</mediatype>
+    <mediatype>audio/x-aac</mediatype>
+    <mediatype>audio/x-m4a</mediatype>
+    <mediatype>audio/m4a</mediatype>
+    <mediatype>audio/mpegurl</mediatype>
+    <mediatype>audio/x-mpegurl</mediatype>
+    <mediatype>audio/vnd.rn-realaudio</mediatype>
+    <mediatype>audio/x-pn-realaudio</mediatype>
+    <mediatype>audio/x-musepack</mediatype>
+    <mediatype>audio/x-scpls</mediatype>
+    <mediatype>audio/x-speex</mediatype>
+    <mediatype>audio/x-shorten</mediatype>
+    <mediatype>audio/x-tta</mediatype>
+    <mediatype>audio/x-wavpack</mediatype>
+  </provides>
+</component>

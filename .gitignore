@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+
+# Flatpak build artifacts
+.flatpak-builder/
+build-dir/
+
+# IDE / Editor settings
+.idea/
+.vscode/
+*.swp
+*~
+
+# Operating System
+.DS_Store
+Thumbs.db
