@@ -6,6 +6,8 @@ Play a song in your file manager, and it will play completely in the background.
 
 It uses your system's existing software libraries to play songs, meaning `smolplayer` is quite literally small. All you need is python, making it completely cross-platform.
 
+This is still in development but you can pretty much use it. Just needs a few more bug squashing.
+
 ## Features
 
 - **No GUI** (yeah, that's a feature)
@@ -13,6 +15,8 @@ It uses your system's existing software libraries to play songs, meaning `smolpl
 - **Uses the folder where the song is located as the playlist**
 - **Uses your system's ffmpeg or gstreamer for decoding**, meaning it can play virtually any audio codec you throw at it
 - **Uses pw-cat to play songs**, meaning PipeWire plays raw audio with zero post-processing
+- **ReplayGain Support** (disabled by default)
+- **Config** for setting shuffle algo, sorting order, and others
 
 ## Installation & Building
 
@@ -54,12 +58,6 @@ playerctl -p smolplayer next
 playerctl -p smolplayer previous
 playerctl -p smolplayer volume 0.8
 ```
-
-## Planned features
-- ReplayGain support
-- Configuration file (for the features below)
-- Ability to change shuffle algorithm
-- Ability to change song sorting method
 
 ## License
 
