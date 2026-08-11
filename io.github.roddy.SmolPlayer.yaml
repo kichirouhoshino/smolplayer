@@ -26,7 +26,7 @@ modules:
     build-commands:
       - install -D main.py /app/bin/smolplayer
       - chmod +x /app/bin/smolplayer
-      - install -t /app/bin player.py mpris.py playlist.py utils.py tray.py config.py test_smolplayer.py
+      - install -t /app/bin player.py mpris.py playlist.py utils.py tray.py config.py constants.py test_smolplayer.py
       - install -D icon.svg /app/bin/icon.svg
       - install -D icon.svg /app/share/icons/hicolor/scalable/apps/io.github.roddy.SmolPlayer.svg
       - install -D icon-64.png /app/share/icons/hicolor/64x64/apps/io.github.roddy.SmolPlayer.png

@@ -19,6 +19,7 @@ from utils import normalize_file_path, send_error_notification, send_notificatio
 from tray import TrayService
 
 from config import get_config, open_config_file
+from constants import APP_NAME
 
 
 class AutoCloseManager:
@@ -42,7 +43,7 @@ class AutoCloseManager:
     def _trigger_timeout(self) -> None:
         mins = int(self._timeout_seconds // 60)
         send_notification(
-            "smolplayer",
+            APP_NAME,
             f"Closed after being paused for {mins} minutes to save system resources."
         )
         if self._on_timeout:
@@ -135,7 +136,7 @@ def main() -> None:
     def handle_open_uri(uri: str) -> None:
         path = normalize_file_path(uri)
         if not os.path.exists(path):
-            send_error_notification("smolplayer File Error", f"File or folder does not exist: {os.path.basename(path)}")
+            send_error_notification(f"{APP_NAME} File Error", f"File or folder does not exist: {os.path.basename(path)}")
             return
 
         current = playlist.load_file_or_folder(path)
@@ -153,7 +154,7 @@ def main() -> None:
                     tray.notify_track(engine.track)
             engine.fetch_cover_async(callback=_on_cover_done)
         else:
-            send_error_notification("smolplayer File Error", f"Unable to find playable audio files for: {os.path.basename(path)}")
+            send_error_notification(f"{APP_NAME} File Error", f"Unable to find playable audio files for: {os.path.basename(path)}")
 
     def handle_track_end() -> None:
         attempts = 0
@@ -182,7 +183,7 @@ def main() -> None:
         engine.stop()
         if attempts > 0:
             send_notification(
-                "smolplayer",
+                APP_NAME,
                 "Playback stopped: files or drive are no longer accessible.",
             )
 
@@ -200,8 +201,8 @@ def main() -> None:
         handle_open_uri(args[0])
     else:
         send_notification(
-            "smolplayer",
-            "smolplayer runs in the background! Open an audio file in your file manager to start music playback and control it using your desktop media widget.",
+            APP_NAME,
+            f"{APP_NAME} runs in the background! Open an audio file in your file manager to start music playback and control it using your desktop media widget.",
         )
 
     # 2. Register MPRIS D-Bus service while audio is already playing

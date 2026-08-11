@@ -11,6 +11,13 @@ import threading
 from typing import Any, List
 from urllib.parse import unquote, urlparse
 
+from constants import (
+    APP_ID,
+    APP_NAME,
+    NOTIFICATION_ICON,
+    NOTIFICATION_TIMEOUT_MS,
+)
+
 AUDIO_EXTS = {
     ".mp3", ".flac", ".ogg", ".opus", ".m4a", ".aac", ".wav",
     ".wma", ".alac", ".aiff", ".aif", ".ape", ".mp2", ".mp1",
@@ -18,9 +25,9 @@ AUDIO_EXTS = {
 }
 
 _COVER_TMPDIR = os.path.join(
-    os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "app", "io.github.roddy.SmolPlayer"
+    os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "app", APP_ID
 )
-_COVER_TMPFILE = os.path.join(_COVER_TMPDIR, "smolplayer_cover")
+_COVER_TMPFILE = os.path.join(_COVER_TMPDIR, f"{APP_NAME}_cover")
 
 
 def natural_sort_key(text: str) -> List[Any]:
@@ -77,7 +84,7 @@ def fmt_time(seconds: float) -> str:
     return f"{m}:{s:02d}"
 
 
-def send_notification(summary: str, body: str, icon: str = "io.github.roddy.SmolPlayer", urgency: int = 1) -> None:
+def send_notification(summary: str, body: str, icon: str = NOTIFICATION_ICON, urgency: int = 1) -> None:
     """
     Send a friendly desktop notification using smolplayer icon and normal urgency.
     urgency: 0=low, 1=normal, 2=critical
@@ -95,14 +102,14 @@ def send_notification(summary: str, body: str, icon: str = "io.github.roddy.Smol
         notify_obj = bus.get_object("org.freedesktop.Notifications", "/org/freedesktop/Notifications")
         notify_iface = dbus.Interface(notify_obj, "org.freedesktop.Notifications")
         notify_iface.Notify(
-            "smolplayer",
+            APP_NAME,
             0,
             icon,
             summary,
             body,
             [],
             {"urgency": dbus.Byte(urgency)},
-            5000
+            NOTIFICATION_TIMEOUT_MS,
         )
         return
     except Exception:
@@ -112,7 +119,7 @@ def send_notification(summary: str, body: str, icon: str = "io.github.roddy.Smol
         urgency_str = "critical" if urgency == 2 else "low" if urgency == 0 else "normal"
         import subprocess
         subprocess.run(
-            ["notify-send", "-u", urgency_str, "-a", "smolplayer", "-i", icon, summary, body],
+            ["notify-send", "-u", urgency_str, "-a", APP_NAME, "-i", icon, summary, body],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
     except Exception:
@@ -121,7 +128,7 @@ def send_notification(summary: str, body: str, icon: str = "io.github.roddy.Smol
 
 def send_error_notification(summary: str, body: str) -> None:
     """Send error notification with app icon and normal urgency."""
-    send_notification(summary, body, icon="io.github.roddy.SmolPlayer", urgency=1)
+    send_notification(summary, body, icon=NOTIFICATION_ICON, urgency=1)
 
 
 class PowerInhibitor:
@@ -130,7 +137,7 @@ class PowerInhibitor:
     Inhibits sleep/idle when state is 'playing', and releases inhibition when 'paused' or 'stopped'.
     """
 
-    def __init__(self, app_name: str = "smolplayer") -> None:
+    def __init__(self, app_name: str = APP_NAME) -> None:
         self._app_name = app_name
         self._lock = threading.Lock()
         self._items: List[Any] = []

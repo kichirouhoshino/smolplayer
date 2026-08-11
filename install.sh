@@ -62,7 +62,7 @@ mkdir -p "${ICON_BASE}/256x256/apps"
 mkdir -p "${ICON_BASE}/512x512/apps"
 
 # Copy application python modules and assets
-cp -f main.py player.py mpris.py playlist.py utils.py tray.py config.py test_smolplayer.py icon.svg icon-64.png icon-128.png icon-256.png icon-512.png "$APP_DIR/"
+cp -f main.py player.py mpris.py playlist.py utils.py tray.py config.py constants.py test_smolplayer.py icon.svg icon-64.png icon-128.png icon-256.png icon-512.png "$APP_DIR/"
 chmod +x "$APP_DIR/main.py"
 
 # Create wrapper script in ~/.local/bin/smolplayer

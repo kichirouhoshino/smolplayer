@@ -9,6 +9,16 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Any, Callable, Optional
 from config import open_config_file
+from constants import (
+    APP_NAME,
+    APP_ID,
+    SNI_IFACE,
+    MENU_IFACE,
+    WATCHER_BUS,
+    WATCHER_PATH,
+    SNI_OBJ_PATH,
+    MENU_OBJ_PATH,
+)
 
 if TYPE_CHECKING:
     from player import PlayerEngine, TrackInfo
@@ -23,11 +33,11 @@ try:
 except Exception:
     _DBUS_OK = False
 
-_SNI_IFACE  = "org.kde.StatusNotifierItem"
-_MENU_IFACE = "com.canonical.dbusmenu"
+_SNI_IFACE   = SNI_IFACE
+_MENU_IFACE  = MENU_IFACE
 _PROPS_IFACE = "org.freedesktop.DBus.Properties"
-_WATCHER_BUS = "org.kde.StatusNotifierWatcher"
-_WATCHER_PATH = "/StatusNotifierWatcher"
+_WATCHER_BUS = WATCHER_BUS
+_WATCHER_PATH = WATCHER_PATH
 
 
 class TrayService:
@@ -52,8 +62,8 @@ class TrayService:
             self._service_name = f"org.kde.StatusNotifierItem-{os.getpid()}-1"
             self._bus_name = dbus.service.BusName(self._service_name, self._bus)
 
-            self._sni_object = _SNIObject(self._bus_name, "/StatusNotifierItem", self)
-            self._menu_object = _MenuObject(self._bus_name, "/StatusNotifierMenu", self)
+            self._sni_object = _SNIObject(self._bus_name, SNI_OBJ_PATH, self)
+            self._menu_object = _MenuObject(self._bus_name, MENU_OBJ_PATH, self)
 
             # Register with StatusNotifierWatcher if present on desktop session bus
             try:
@@ -90,7 +100,7 @@ class TrayService:
     def get_tooltip_text(self) -> str:
         track = self._engine.track
         if not track:
-            return "smolplayer - Stopped"
+            return f"{APP_NAME} - Stopped"
         state_str = "Playing" if self._engine.state == "playing" else "Paused"
         title = track.title or os.path.basename(track.path)
         artist = f" - {track.artist}" if track.artist else ""
@@ -114,19 +124,19 @@ if _DBUS_OK:
                 tooltip_msg = self._service.get_tooltip_text()
                 return {
                     "Category": dbus.String("ApplicationStatus"),
-                    "Id": dbus.String("smolplayer"),
-                    "Title": dbus.String("smolplayer"),
+                    "Id": dbus.String(APP_NAME),
+                    "Title": dbus.String(APP_NAME),
                     "Status": dbus.String("Active"),
-                    "IconName": dbus.String("io.github.roddy.SmolPlayer"),
+                    "IconName": dbus.String(APP_ID),
                     "OverlayIconName": dbus.String(""),
                     "AttentionIconName": dbus.String(""),
                     "ToolTip": dbus.Struct(
-                        ("io.github.roddy.SmolPlayer", dbus.Array([], signature="(iiay)"), "smolplayer", tooltip_msg),
+                        (APP_ID, dbus.Array([], signature="(iiay)"), APP_NAME, tooltip_msg),
                         signature="sa(iiay)ss",
                     ),
                     "ItemIsMenu": dbus.Boolean(True),
-                    "Menu": dbus.ObjectPath("/StatusNotifierMenu"),
-                    "ContextMenu": dbus.ObjectPath("/StatusNotifierMenu"),
+                    "Menu": dbus.ObjectPath(MENU_OBJ_PATH),
+                    "ContextMenu": dbus.ObjectPath(MENU_OBJ_PATH),
                 }
             return {}
 
@@ -178,7 +188,7 @@ if _DBUS_OK:
                 return (dbus.Int32(id_num), d_props, c_arr)
 
             config_item = make_item(1, {"label": "Open Config File", "icon-name": "preferences-system"})
-            quit_item = make_item(2, {"label": "Quit smolplayer", "icon-name": "application-exit"})
+            quit_item = make_item(2, {"label": f"Quit {APP_NAME}", "icon-name": "application-exit"})
             root = make_item(0, {}, [config_item, quit_item])
             return (dbus.UInt32(1), root)
 

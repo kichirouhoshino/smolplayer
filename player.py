@@ -19,12 +19,31 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from utils import write_cover_art, send_error_notification
+from constants import (
+    APP_NAME,
+    APP_ID,
+    DEFAULT_SAMPLE_RATE,
+    DEFAULT_CHANNELS,
+    DEFAULT_SAMPLE_FMT,
+    DEFAULT_FFMPEG_FMT,
+    FFPROBE_ANALYZEDURATION,
+    FFPROBE_PROBESIZE,
+    PIPELINE_SILENCE_LEAD_IN,
+    PIPELINE_CHUNK_SIZE,
+    PWCAT_DRAIN_BYTES,
+    PWCAT_NODE_NAME,
+    PWCAT_NODE_DESCRIPTION,
+    PWCAT_LATENCY,
+    VOLUME_SYNC_INTERVAL,
+    VOLUME_SINK_RETRY_SECS,
+    MAX_CONSECUTIVE_FAILURES,
+)
 
 STATE_STOPPED = "stopped"
 STATE_PAUSED  = "paused"
 STATE_PLAYING = "playing"
 
-CHUNK = 65536
+CHUNK = PIPELINE_CHUNK_SIZE
 
 _FMT_MAP: dict[str, tuple[str, str, int]] = {
     "u8":    ("u8",    "u8",  1),
@@ -46,7 +65,7 @@ _FMT_MAP: dict[str, tuple[str, str, int]] = {
     "dblp":  ("f64le", "f64", 8),
     "f64le": ("f64le", "f64", 8),
 }
-_DEFAULT_FMT: tuple[str, str, int] = ("s16le", "s16", 2)
+_DEFAULT_FMT: tuple[str, str, int] = (DEFAULT_FFMPEG_FMT, DEFAULT_SAMPLE_FMT, 2)
 
 
 @dataclass
@@ -121,8 +140,8 @@ def _probe_metadata_gstreamer(path: str) -> Optional[dict]:
             return None
         astream = streams[0]
 
-        sr = astream.get_sample_rate() or 44100
-        ch = astream.get_channels() or 2
+        sr = astream.get_sample_rate() or DEFAULT_SAMPLE_RATE
+        ch = astream.get_channels() or DEFAULT_CHANNELS
         depth = astream.get_depth() or 16
 
         if depth > 24 or depth == 32:
@@ -207,7 +226,7 @@ def probe_track(path: str) -> TrackInfo:
 
     if meta is None:
         send_error_notification(
-            "smolplayer Error",
+            f"{APP_NAME} Error",
             f"Unable to read audio metadata for {os.path.basename(path)} with FFmpeg or GStreamer."
         )
         return TrackInfo(path=path, title=_basename)
@@ -218,11 +237,11 @@ def probe_track(path: str) -> TrackInfo:
         artist=meta.get("artist", ""),
         album=meta.get("album", ""),
         duration=meta.get("duration", 0.0),
-        sample_rate=meta.get("sample_rate", 44100),
-        channels=meta.get("channels", 2),
-        sample_fmt=meta.get("sample_fmt", "s16"),
-        ffmpeg_fmt=meta.get("ffmpeg_fmt", "s16le"),
-        pwcat_fmt=meta.get("pwcat_fmt", "s16"),
+        sample_rate=meta.get("sample_rate", DEFAULT_SAMPLE_RATE),
+        channels=meta.get("channels", DEFAULT_CHANNELS),
+        sample_fmt=meta.get("sample_fmt", DEFAULT_SAMPLE_FMT),
+        ffmpeg_fmt=meta.get("ffmpeg_fmt", DEFAULT_FFMPEG_FMT),
+        pwcat_fmt=meta.get("pwcat_fmt", DEFAULT_SAMPLE_FMT),
         bytes_per_sample=meta.get("bytes_per_sample", 2),
         cover_url=None,
         track_gain_db=meta.get("track_gain_db"),
@@ -235,8 +254,8 @@ def _probe_metadata(path: str) -> Optional[dict]:
     try:
         res = subprocess.run(
             ["ffprobe", "-v", "quiet",
-             "-analyzeduration", "100000",
-             "-probesize", "32768",
+             "-analyzeduration", FFPROBE_ANALYZEDURATION,
+             "-probesize", FFPROBE_PROBESIZE,
              "-print_format", "json",
              "-show_format", "-show_streams", "-select_streams", "a:0", path],
             capture_output=True, text=True, timeout=5,
@@ -274,8 +293,8 @@ def _probe_metadata(path: str) -> Optional[dict]:
         "artist":          tags.get("artist") or tags.get("album_artist") or "",
         "album":           tags.get("album") or "",
         "duration":        float(fmt.get("duration") or 0.0),
-        "sample_rate":     int(astream.get("sample_rate") or 44100),
-        "channels":        int(astream.get("channels") or 2),
+        "sample_rate":     int(astream.get("sample_rate") or DEFAULT_SAMPLE_RATE),
+        "channels":        int(astream.get("channels") or DEFAULT_CHANNELS),
         "sample_fmt":      raw_fmt,
         "ffmpeg_fmt":      ffmpeg_fmt,
         "pwcat_fmt":       pwcat_fmt,
@@ -354,7 +373,7 @@ class PlayerEngine:
         """Query current PipeWire / PulseAudio sink-input volume and sync internal state."""
         now = time.monotonic()
         with self._lock:
-            if self._is_setting_volume or (now - self._last_vol_sync_time < 0.20):
+            if self._is_setting_volume or (now - self._last_vol_sync_time < VOLUME_SYNC_INTERVAL):
                 return self._volume
             self._last_vol_sync_time = now
 
@@ -379,7 +398,11 @@ class PlayerEngine:
             if res.returncode == 0:
                 blocks = res.stdout.split("Sink Input #")
                 for b in blocks[1:]:
-                    if any(x in b for x in ('node.name = "smolplayer"', 'application.name = "smolplayer"', 'media.name = "smolplayer"')):
+                    if any(x in b for x in (
+                        f'node.name = "{PWCAT_NODE_NAME}"',
+                        f'application.name = "{PWCAT_NODE_NAME}"',
+                        f'media.name = "{PWCAT_NODE_NAME}"',
+                    )):
                         m = re.search(r'Volume:\s*.*?\/\s*(\d+)%', b)
                         if m:
                             return int(m.group(1)) / 100.0
@@ -406,7 +429,7 @@ class PlayerEngine:
                 except Exception:
                     time.sleep(2.0)
 
-        threading.Thread(target=_listener, daemon=True, name="smolplayer-vol-sync").start()
+        threading.Thread(target=_listener, daemon=True, name=f"{APP_NAME}-vol-sync").start()
 
     # ---------------------------------------------------------------- helpers
 
@@ -534,7 +557,7 @@ class PlayerEngine:
                 if callback:
                     callback(cover_url)
 
-        threading.Thread(target=_worker, daemon=True, name="smolplayer-cover").start()
+        threading.Thread(target=_worker, daemon=True, name=f"{APP_NAME}-cover").start()
 
     def set_volume(self, volume: float) -> None:
         """Store volume and apply immediately if playing."""
@@ -547,7 +570,7 @@ class PlayerEngine:
             self._vol_thread_active = True
 
         threading.Thread(
-            target=self._apply_volume_worker, daemon=True, name="smolplayer-vol"
+            target=self._apply_volume_worker, daemon=True, name=f"{APP_NAME}-vol"
         ).start()
 
     # --------------------------------------------------------------- internal
@@ -580,10 +603,10 @@ class PlayerEngine:
 
     def _find_smolplayer_sink_input(self) -> Optional[int]:
         """
-        Find smolplayer's pactl sink-input by node.name = "smolplayer".
-        Retries for up to 0.5 s to cover the brief PipeWire registration delay.
+        Find smolplayer's pactl sink-input by node.name.
+        Retries for up to VOLUME_SINK_RETRY_SECS to cover the brief PipeWire registration delay.
         """
-        deadline = time.monotonic() + 0.5
+        deadline = time.monotonic() + VOLUME_SINK_RETRY_SECS
         while time.monotonic() < deadline:
             try:
                 res = subprocess.run(
@@ -596,12 +619,13 @@ class PlayerEngine:
                         s = line.strip()
                         if s.startswith("Sink Input #"):
                             current_idx = int(s.split("#")[1])
-                        elif s == 'node.name = "smolplayer"' and current_idx is not None:
+                        elif s == f'node.name = "{PWCAT_NODE_NAME}"' and current_idx is not None:
                             return current_idx
             except Exception:
                 return None
             time.sleep(0.1)
         return None
+
 
     def _spawn_ffmpeg_proc(self, t: TrackInfo, seek_pos: float) -> Optional[subprocess.Popen]:
         if not shutil.which("ffmpeg"):
@@ -621,8 +645,8 @@ class PlayerEngine:
 
         cmd = [
             "ffmpeg", "-nostdin", "-v", "quiet",
-            "-analyzeduration", "100000",
-            "-probesize", "32768",
+            "-analyzeduration", FFPROBE_ANALYZEDURATION,
+            "-probesize", FFPROBE_PROBESIZE,
             *seek_args,
             "-i", t.path,
             *rg_args,
@@ -715,7 +739,7 @@ except Exception:
             if self._seek_position == 0.0 and not can_reuse:
                 bytes_per_sec = t.sample_rate * t.channels * t.bytes_per_sample
                 frame_size = t.channels * t.bytes_per_sample
-                raw_silence = int(bytes_per_sec * 0.040)
+                raw_silence = int(bytes_per_sec * PIPELINE_SILENCE_LEAD_IN)
                 self._silence_bytes = (raw_silence // frame_size) * frame_size
             else:
                 self._silence_bytes = 0
@@ -736,7 +760,7 @@ except Exception:
 
         if proc is None:
             send_error_notification(
-                "smolplayer Error",
+                f"{APP_NAME} Error",
                 f"Audio decoding failed for {os.path.basename(t.path)}. Neither FFmpeg nor GStreamer could process format."
             )
             self._ffmpeg = None
@@ -757,11 +781,11 @@ except Exception:
                 "--media-type", "Audio",
                 "--media-category", "Playback",
                 "--media-role", "Music",
-                "-P", "node.name=smolplayer",
-                "-P", "node.description=smolplayer",
-                "-P", "media.name=smolplayer",
-                "-P", "app.name=smolplayer",
-                "--latency", "100ms",
+                "-P", f"node.name={PWCAT_NODE_NAME}",
+                "-P", f"node.description={PWCAT_NODE_DESCRIPTION}",
+                "-P", f"media.name={PWCAT_NODE_NAME}",
+                "-P", f"app.name={PWCAT_NODE_NAME}",
+                "--latency", PWCAT_LATENCY,
                 "-",
             ]
 
@@ -772,7 +796,7 @@ except Exception:
                 )
                 self._pwcat_fmt = target_fmt
             except Exception as exc:
-                send_error_notification("smolplayer", f"Could not start pw-cat: {exc}")
+                send_error_notification(APP_NAME, f"Could not start pw-cat: {exc}")
                 if self._ffmpeg:
                     self._ffmpeg.kill()
                     self._ffmpeg = None
@@ -787,7 +811,7 @@ except Exception:
             target=self._pump_loop,
             args=(gen, stop_evt, ffmpeg_proc, pwcat_proc),
             daemon=True,
-            name=f"smolplayer-pump-{gen}",
+            name=f"{APP_NAME}-pump-{gen}",
         )
         self._pump_thread.start()
         return True
@@ -848,9 +872,9 @@ except Exception:
             if is_current:
                 if self._bytes_written == 0:
                     self._consecutive_failures += 1
-                    if self._consecutive_failures >= 5:
+                    if self._consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
                         send_error_notification(
-                            "smolplayer",
+                            APP_NAME,
                             "Playback stopped: audio system or decoder failed repeatedly.",
                         )
                         self._set_state(STATE_STOPPED)
@@ -901,7 +925,7 @@ except Exception:
             # This allows PipeWire to automatically re-negotiate and switch hardware DAC clock sample rates.
             if self._pwcat.stdin:
                 try:
-                    self._pwcat.stdin.write(b"\x00" * 2048)
+                    self._pwcat.stdin.write(b"\x00" * PWCAT_DRAIN_BYTES)
                     self._pwcat.stdin.flush()
                     self._pwcat.stdin.close()
                 except Exception:

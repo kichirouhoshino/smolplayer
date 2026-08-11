@@ -23,6 +23,7 @@ from player import PlayerEngine, TrackInfo, STATE_PLAYING, STATE_PAUSED, STATE_S
 from tray import TrayService
 from mpris import _track_id
 from config import Config, get_config, open_config_file, get_config_file_path
+from constants import APP_NAME, TRACK_OBJ_PATH
 
 
 class TestConfig(unittest.TestCase):
@@ -334,7 +335,7 @@ class TestTrayService(unittest.TestCase):
         playlist = PlaylistManager()
 
         tray = TrayService(engine, playlist)
-        self.assertEqual(tray.get_tooltip_text(), "smolplayer - Stopped")
+        self.assertEqual(tray.get_tooltip_text(), f"{APP_NAME} - Stopped")
 
         engine._track = TrackInfo(
             path="/tmp/song.mp3",
@@ -399,8 +400,8 @@ class TestMainCLI(unittest.TestCase):
 
 class TestMprisService(unittest.TestCase):
     def test_track_id_formatting(self) -> None:
-        self.assertEqual(str(_track_id(0)), "/org/smolplayer/Track/0")
-        self.assertEqual(str(_track_id(42)), "/org/smolplayer/Track/42")
+        self.assertEqual(str(_track_id(0)), f"{TRACK_OBJ_PATH}/0")
+        self.assertEqual(str(_track_id(42)), f"{TRACK_OBJ_PATH}/42")
 
 
 

@@ -14,6 +14,16 @@ from typing import TYPE_CHECKING, Any, Optional
 from urllib.parse import unquote, urlparse
 
 from utils import send_notification
+from constants import (
+    APP_NAME,
+    APP_ID,
+    MPRIS_BUS_NAME,
+    MPRIS_OBJ_PATH,
+    MPRIS_IFACE,
+    MPRIS_PLAYER,
+    DBUS_PROPS,
+    TRACK_OBJ_PATH,
+)
 
 try:
     import dbus
@@ -27,11 +37,11 @@ if TYPE_CHECKING:
     from player import PlayerEngine, TrackInfo
     from playlist import PlaylistManager
 
-_BUS_NAME = "org.mpris.MediaPlayer2.smolplayer"
-_OBJ_PATH = "/org/mpris/MediaPlayer2"
-_MPRIS    = "org.mpris.MediaPlayer2"
-_PLAYER   = "org.mpris.MediaPlayer2.Player"
-_PROPS    = "org.freedesktop.DBus.Properties"
+_BUS_NAME = MPRIS_BUS_NAME
+_OBJ_PATH = MPRIS_OBJ_PATH
+_MPRIS    = MPRIS_IFACE
+_PLAYER   = MPRIS_PLAYER
+_PROPS    = DBUS_PROPS
 
 
 if _DBUS_OK:
@@ -41,8 +51,8 @@ if _DBUS_OK:
 
     def _track_id(index: int) -> dbus.ObjectPath:
         if index < 0:
-            return dbus.ObjectPath("/org/smolplayer/Track/None")
-        return dbus.ObjectPath(f"/org/smolplayer/Track/{index}")
+            return dbus.ObjectPath(f"{TRACK_OBJ_PATH}/None")
+        return dbus.ObjectPath(f"{TRACK_OBJ_PATH}/{index}")
 
     class MprisService(dbus.service.Object):
         """Full MPRIS2 implementation backed by PlayerEngine and PlaylistManager."""
@@ -178,8 +188,8 @@ if _DBUS_OK:
                     "CanQuit": dbus.Boolean(True),
                     "CanRaise": dbus.Boolean(False),
                     "HasTrackList": dbus.Boolean(False),
-                    "Identity": dbus.String("smolplayer"),
-                    "DesktopEntry": dbus.String("io.github.roddy.SmolPlayer"),
+                    "Identity": dbus.String(APP_NAME),
+                    "DesktopEntry": dbus.String(APP_ID),
                     "SupportedUriSchemes": dbus.Array(["file"], signature="s"),
                     "SupportedMimeTypes": dbus.Array(
                         ["audio/mpeg", "audio/flac", "audio/ogg", "audio/wav", "audio/mp4"],
@@ -374,8 +384,8 @@ def forward_files_to_existing(paths: list[str]) -> bool:
 
         if not paths:
             send_notification(
-                "smolplayer",
-                "smolplayer is already running in the background! Open an audio file in your file manager to start playback.",
+                APP_NAME,
+                f"{APP_NAME} is already running in the background! Open an audio file in your file manager to start playback.",
             )
             return True
 
