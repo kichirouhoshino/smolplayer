@@ -22,7 +22,7 @@ from playlist import PlaylistManager, scan_audio_files_recursive
 from player import PlayerEngine, TrackInfo, STATE_PLAYING, STATE_PAUSED, STATE_STOPPED
 from tray import TrayService
 from mpris import _track_id
-from config import Config, get_config
+from config import Config, get_config, open_config_file, get_config_file_path
 
 
 class TestConfig(unittest.TestCase):
@@ -97,6 +97,15 @@ class TestConfig(unittest.TestCase):
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
+
+    def test_open_config_file(self) -> None:
+        with patch("subprocess.Popen") as mock_popen:
+            open_config_file()
+            mock_popen.assert_called_once()
+            args = mock_popen.call_args[0][0]
+            self.assertEqual(args[0], "xdg-open")
+            self.assertEqual(args[1], get_config_file_path())
+
 
 
 class TestUtils(unittest.TestCase):
@@ -220,9 +229,11 @@ class TestPlayerEngine(unittest.TestCase):
         self.engine.stop()
 
     def test_engine_initial_state(self) -> None:
-        self.assertEqual(self.engine.state, STATE_STOPPED)
-        self.assertEqual(self.engine.volume, 1.0)
-        self.assertIsNone(self.engine.track)
+        with patch.object(self.engine, "sync_system_volume"):
+            self.assertEqual(self.engine.state, STATE_STOPPED)
+            self.assertEqual(self.engine.volume, 1.0)
+            self.assertIsNone(self.engine.track)
+
 
     def test_volume_clamping(self) -> None:
         self.engine.set_volume(1.5)
@@ -341,11 +352,56 @@ class TestTrayService(unittest.TestCase):
 
         self.assertEqual(tray.get_tooltip_text(), "Fast Car - Tracy Chapman (Playing)")
 
+    def test_tray_menu_events(self) -> None:
+        from tray import _DBUS_OK, _MenuObject
+        if not _DBUS_OK:
+            return
+        engine = PlayerEngine()
+        playlist = PlaylistManager()
+        mock_open_cfg = MagicMock()
+        mock_quit = MagicMock()
+
+        tray = TrayService(engine, playlist, on_quit=mock_quit, on_open_config=mock_open_cfg)
+        if hasattr(tray, "_menu_object"):
+            menu_obj = tray._menu_object
+            # Event for item 1 ("Open Config File")
+            menu_obj.Event(1, "clicked", None, 0)
+            mock_open_cfg.assert_called_once()
+
+            # Event for item 2 ("Quit smolplayer")
+            menu_obj.Event(2, "clicked", None, 0)
+            mock_quit.assert_called_once()
+
+
+class TestMainCLI(unittest.TestCase):
+    def test_main_config_flag(self) -> None:
+        from main import main
+        with patch("sys.argv", ["smolplayer", "--config"]), \
+             patch("main.open_config_file") as mock_open, \
+             patch("sys.exit", side_effect=SystemExit(0)):
+            with self.assertRaises(SystemExit) as cm:
+                main()
+            self.assertEqual(cm.exception.code, 0)
+            mock_open.assert_called_once()
+
+    def test_main_close_flag(self) -> None:
+        from main import main
+        with patch("sys.argv", ["smolplayer", "--close"]), \
+             patch("main.quit_existing_instance") as mock_quit, \
+             patch("sys.exit", side_effect=SystemExit(0)):
+            with self.assertRaises(SystemExit) as cm:
+                main()
+            self.assertEqual(cm.exception.code, 0)
+            mock_quit.assert_called_once()
+
+
+
 
 class TestMprisService(unittest.TestCase):
     def test_track_id_formatting(self) -> None:
         self.assertEqual(str(_track_id(0)), "/org/smolplayer/Track/0")
         self.assertEqual(str(_track_id(42)), "/org/smolplayer/Track/42")
+
 
 
 if __name__ == "__main__":

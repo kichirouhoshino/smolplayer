@@ -9,3 +9,13 @@ Type=Application
 Categories=Audio;Music;Player;AudioVideo;
 MimeType=audio/mpeg;audio/flac;audio/ogg;audio/opus;audio/mp4;audio/x-wav;audio/wav;audio/x-matroska;audio/webm;audio/aac;audio/alac;audio/x-ape;audio/x-aiff;audio/aiff;audio/wma;audio/x-ms-wma;audio/x-flac;audio/x-mp3;audio/mp3;audio/x-vorbis+ogg;audio/x-opus+ogg;audio/x-aac;audio/x-m4a;audio/m4a;audio/mpegurl;audio/x-mpegurl;audio/vnd.rn-realaudio;audio/x-pn-realaudio;audio/x-musepack;audio/x-scpls;audio/x-speex;audio/x-shorten;audio/x-tta;audio/x-wavpack;inode/directory;
 StartupNotify=false
+Actions=Close;Configure;
+
+[Desktop Action Close]
+Name=Close smolplayer
+Exec=smolplayer --close
+
+[Desktop Action Configure]
+Name=Open Config File
+Exec=smolplayer --config
+

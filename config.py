@@ -9,6 +9,7 @@ from __future__ import annotations
 import configparser
 import json
 import os
+import subprocess
 from dataclasses import dataclass
 
 _CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "smolplayer")
@@ -156,3 +157,22 @@ def save_toggles_state(shuffle: bool, loop_status: str) -> None:
             json.dump({"shuffle": shuffle, "loop_status": loop_status}, f)
     except Exception:
         pass
+
+
+def get_config_file_path() -> str:
+    """Return the path to the config file."""
+    return _CONFIG_FILE
+
+
+def open_config_file() -> None:
+    """Ensure config file exists and open it with system default application via xdg-open."""
+    get_config()
+    cfg_file = get_config_file_path()
+    try:
+        subprocess.Popen(["xdg-open", cfg_file])
+    except Exception:
+        try:
+            subprocess.Popen(["gio", "open", cfg_file])
+        except Exception:
+            pass
+

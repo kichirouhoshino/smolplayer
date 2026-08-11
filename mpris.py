@@ -389,3 +389,22 @@ def forward_files_to_existing(paths: list[str]) -> bool:
         return True
     except Exception:
         return False
+
+
+def quit_existing_instance() -> bool:
+    """Send Quit call to existing smolplayer instance if running."""
+    if not _DBUS_OK:
+        return False
+    try:
+        DBusGMainLoop(set_as_default=True)
+        bus = dbus.SessionBus()
+        if not bus.name_has_owner(_BUS_NAME):
+            return False
+
+        obj = bus.get_object(_BUS_NAME, _OBJ_PATH)
+        mpris = dbus.Interface(obj, _MPRIS)
+        mpris.Quit()
+        return True
+    except Exception:
+        return False
+

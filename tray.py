@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from typing import TYPE_CHECKING, Any, Callable, Optional
+from config import open_config_file
 
 if TYPE_CHECKING:
     from player import PlayerEngine, TrackInfo
@@ -35,10 +36,12 @@ class TrayService:
         engine: PlayerEngine,
         playlist: PlaylistManager,
         on_quit: Optional[Callable[[], None]] = None,
+        on_open_config: Optional[Callable[[], None]] = None,
     ) -> None:
         self._engine = engine
         self._playlist = playlist
         self._on_quit = on_quit
+        self._on_open_config = on_open_config or open_config_file
         self._active = False
 
         if not _DBUS_OK:
@@ -174,8 +177,9 @@ if _DBUS_OK:
                 d_props = dbus.Dictionary(props, signature="sv")
                 return (dbus.Int32(id_num), d_props, c_arr)
 
-            quit_item = make_item(1, {"label": "Quit smolplayer", "icon-name": "application-exit"})
-            root = make_item(0, {}, [quit_item])
+            config_item = make_item(1, {"label": "Open Config File", "icon-name": "preferences-system"})
+            quit_item = make_item(2, {"label": "Quit smolplayer", "icon-name": "application-exit"})
+            root = make_item(0, {}, [config_item, quit_item])
             return (dbus.UInt32(1), root)
 
         @dbus.service.method(_MENU_IFACE, in_signature="i", out_signature="b")
@@ -188,9 +192,14 @@ if _DBUS_OK:
 
         @dbus.service.method(_MENU_IFACE, in_signature="isvu", out_signature="")
         def Event(self, id: int, event_id: str, data: Any, timestamp: int) -> None:
-            if event_id == "clicked" and id == 1:
-                if self._service._on_quit:
-                    self._service._on_quit()
+            if event_id == "clicked":
+                if id == 1:
+                    if self._service._on_open_config:
+                        self._service._on_open_config()
+                elif id == 2:
+                    if self._service._on_quit:
+                        self._service._on_quit()
+
 
         @dbus.service.signal(_MENU_IFACE, signature="ui")
         def LayoutUpdated(self, revision: int, parent_id: int) -> None: pass

@@ -14,11 +14,11 @@ import threading
 from typing import Optional
 from player import PlayerEngine
 from playlist import PlaylistManager
-from mpris import MprisService, forward_files_to_existing
+from mpris import MprisService, forward_files_to_existing, quit_existing_instance
 from utils import normalize_file_path, send_error_notification, send_notification, PowerInhibitor
 from tray import TrayService
 
-from config import get_config
+from config import get_config, open_config_file
 
 
 class AutoCloseManager:
@@ -87,6 +87,15 @@ def main() -> None:
     args = sys.argv[1:]
     cfg = get_config()
 
+    if "--config" in args or "-c" in args:
+        open_config_file()
+        sys.exit(0)
+
+    if "--close" in args or "--quit" in args or "-q" in args:
+        quit_existing_instance()
+        sys.exit(0)
+
+
     # 1. Check for single instance; forward files if already running
     if args and forward_files_to_existing(args):
         sys.exit(0)
@@ -106,7 +115,7 @@ def main() -> None:
     autoclose = AutoCloseManager(timeout_minutes=cfg.timeout, on_timeout_callback=handle_quit)
 
     mpris = None
-    tray = TrayService(engine, playlist, on_quit=handle_quit) if cfg.tray_enabled else None
+    tray = TrayService(engine, playlist, on_quit=handle_quit, on_open_config=open_config_file) if cfg.tray_enabled else None
 
     def handle_state_change(new_state: str) -> None:
         if mpris:
