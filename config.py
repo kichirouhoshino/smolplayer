@@ -28,6 +28,14 @@ DEFAULT_CONFIG_TEXT = """# smolplayer configuration file
 # Default is 0
 replay_gain = 0
 
+# Pre-amp gain for songs with ReplayGain info (in dB)
+# Default is 0
+replaygain_preamp = 0
+
+# Pre-amp gain for songs without ReplayGain info (in dB)
+# Default is 0
+replaygain_default_preamp = 0
+
 # Shuffle Algorithm
 # 0 - Fisher-Yates (Modern Knuth Shuffle - Industry Standard, Fair Uniform Random)
 # 1 - Smart Shuffle (Artist-spaced, prevents same artist/album back-to-back)
@@ -84,9 +92,95 @@ decode_method = 0
 """
 
 
+_OPTION_BLOCKS: dict[str, str] = {
+    "replay_gain": (
+        "\n# Enable ReplayGain\n"
+        "# 0 - Off\n"
+        "# 1 - Use Track Gain\n"
+        "# 2 - Use Album Gain\n"
+        "# Default is 0\n"
+        "replay_gain = 0\n"
+    ),
+    "replaygain_preamp": (
+        "\n# Pre-amp gain for songs with ReplayGain info (in dB)\n"
+        "# Default is 0\n"
+        "replaygain_preamp = 0\n"
+    ),
+    "replaygain_default_preamp": (
+        "\n# Pre-amp gain for songs without ReplayGain info (in dB)\n"
+        "# Default is 0\n"
+        "replaygain_default_preamp = 0\n"
+    ),
+    "shuffle_algo": (
+        "\n# Shuffle Algorithm\n"
+        "# 0 - Fisher-Yates (Modern Knuth Shuffle - Industry Standard, Fair Uniform Random)\n"
+        "# 1 - Smart Shuffle (Artist-spaced, prevents same artist/album back-to-back)\n"
+        "# 2 - True Random (Pure random selection with replacement)\n"
+        "# Default is 0\n"
+        "shuffle_algo = 0\n"
+    ),
+    "sort_method": (
+        "\n# Sorting Method when shuffle is off\n"
+        "# 0 - By filename\n"
+        "# 1 - By title\n"
+        "# 2 - By disc and track number\n"
+        "# 3 - By artist & title\n"
+        "# Default is 0\n"
+        "sort_method = 0\n"
+    ),
+    "recurse_fileopen": (
+        "\n# Set whether to play songs recursively on File Open Action\n"
+        "# 0 - False (single parent folder only)\n"
+        "# 1 - True (recursive subfolders)\n"
+        "# Default is 0\n"
+        "recurse_fileopen = 0\n"
+    ),
+    "recurse_folderopen": (
+        "\n# Set whether to play songs recursively on \"Open folder with\" action\n"
+        "# 0 - False (top-level folder only)\n"
+        "# 1 - True (recursive subfolders)\n"
+        "# Default is 1\n"
+        "recurse_folderopen = 1\n"
+    ),
+    "timeout": (
+        "\n# Timeout: When smolplayer will close itself when music has not been\n"
+        "# playing for a certain period of time\n"
+        "# Set by minutes (0 = disabled)\n"
+        "# Default is 30\n"
+        "timeout = 30\n"
+    ),
+    "presence": (
+        "\n# Set how much presence smolplayer has in certain areas.\n"
+        "# 0 - Tray and Notifications enabled\n"
+        "# 1 - Tray only\n"
+        "# 2 - Notifications only\n"
+        "# 3 - All off\n"
+        "# Default is 0\n"
+        "presence = 0\n"
+    ),
+    "remember_toggles": (
+        "\n# Set whether to remember Shuffle and Repeat across app opens\n"
+        "# 0 - False (default)\n"
+        "# 1 - True\n"
+        "# Default is 0\n"
+        "remember_toggles = 0\n"
+    ),
+    "decode_method": (
+        "\n# Set what to use as the audio decoding method\n"
+        "# 0 - ffmpeg (recommended)\n"
+        "# 1 - gstreamer\n"
+        "# If a format is not available on one method, it will fallback to the other\n"
+        "# Defaults to 0\n"
+        "decode_method = 0\n"
+    ),
+}
+
+
 @dataclass
 class Config:
     replay_gain: int = 0
+    replaygain_preamp: float = 0.0
+    replaygain_default_preamp: float = 0.0
     shuffle_algo: int = 0
     sort_method: int = 0
     recurse_fileopen: int = 0
@@ -106,7 +200,7 @@ class Config:
 
 
 def get_config() -> Config:
-    """Load configuration from file, creating default config if absent."""
+    """Load configuration from file, creating default config if absent or updating missing options."""
     cfg = Config()
     if not os.path.exists(_CONFIG_FILE):
         try:
@@ -120,9 +214,23 @@ def get_config() -> Config:
     parser = configparser.ConfigParser()
     try:
         parser.read(_CONFIG_FILE, encoding="utf-8")
+        existing_keys = set(parser["smolplayer"].keys()) if parser.has_section("smolplayer") else set()
+
+        missing_keys = [k for k in _OPTION_BLOCKS if k not in existing_keys]
+        if missing_keys:
+            try:
+                with open(_CONFIG_FILE, "a", encoding="utf-8") as f:
+                    for k in missing_keys:
+                        f.write(_OPTION_BLOCKS[k])
+                parser.read(_CONFIG_FILE, encoding="utf-8")
+            except OSError:
+                pass
+
         if parser.has_section("smolplayer"):
             sec = parser["smolplayer"]
             cfg.replay_gain = sec.getint("replay_gain", 0)
+            cfg.replaygain_preamp = sec.getfloat("replaygain_preamp", 0.0)
+            cfg.replaygain_default_preamp = sec.getfloat("replaygain_default_preamp", 0.0)
             cfg.shuffle_algo = sec.getint("shuffle_algo", 0)
             cfg.sort_method = sec.getint("sort_method", 0)
             cfg.recurse_fileopen = sec.getint("recurse_fileopen", 0)

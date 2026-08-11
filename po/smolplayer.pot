@@ -1,0 +1,109 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-08-11 13:50+0800\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=CHARSET\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: main.py:48
+#, python-brace-format
+msgid "Closed after being paused for {mins} minutes to save system resources."
+msgstr ""
+
+#: main.py:140 main.py:158
+#, python-brace-format
+msgid "{app_name} File Error"
+msgstr ""
+
+#: main.py:140
+#, python-brace-format
+msgid "File or folder does not exist: {name}"
+msgstr ""
+
+#: main.py:158
+#, python-brace-format
+msgid "Unable to find playable audio files for: {name}"
+msgstr ""
+
+#: main.py:188
+msgid "Playback stopped: files or drive are no longer accessible."
+msgstr ""
+
+#: main.py:206
+#, python-brace-format
+msgid ""
+"{app_name} runs in the background! Open an audio file in your file manager "
+"to start music playback and control it using your desktop media widget."
+msgstr ""
+
+#: tray.py:104
+#, python-brace-format
+msgid "{app_name} - Stopped"
+msgstr ""
+
+#: tray.py:105
+msgid "Playing"
+msgstr ""
+
+#: tray.py:105
+msgid "Paused"
+msgstr ""
+
+#: tray.py:108
+#, python-brace-format
+msgid "{title}{artist} ({state})"
+msgstr ""
+
+#: tray.py:191
+msgid "Open Config File"
+msgstr ""
+
+#: tray.py:192
+#, python-brace-format
+msgid "Quit {app_name}"
+msgstr ""
+
+#: player.py:230 player.py:764
+#, python-brace-format
+msgid "{app_name} Error"
+msgstr ""
+
+#: player.py:231
+#, python-brace-format
+msgid "Unable to read audio metadata for {name} with FFmpeg or GStreamer."
+msgstr ""
+
+#: player.py:765
+#, python-brace-format
+msgid ""
+"Audio decoding failed for {name}. Neither FFmpeg nor GStreamer could process "
+"format."
+msgstr ""
+
+#: player.py:800
+#, python-brace-format
+msgid "Could not start pw-cat: {exc}"
+msgstr ""
+
+#: player.py:879
+msgid "Playback stopped: audio system or decoder failed repeatedly."
+msgstr ""
+
+#: mpris.py:389
+#, python-brace-format
+msgid ""
+"{app_name} is already running in the background! Open an audio file in your "
+"file manager to start playback."
+msgstr ""

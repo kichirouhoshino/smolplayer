@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from utils import write_cover_art, send_error_notification
+from i18n import _
 from constants import (
     APP_NAME,
     APP_ID,
@@ -226,8 +227,8 @@ def probe_track(path: str) -> TrackInfo:
 
     if meta is None:
         send_error_notification(
-            f"{APP_NAME} Error",
-            f"Unable to read audio metadata for {os.path.basename(path)} with FFmpeg or GStreamer."
+            _("{app_name} Error").format(app_name=APP_NAME),
+            _("Unable to read audio metadata for {name} with FFmpeg or GStreamer.").format(name=os.path.basename(path))
         )
         return TrackInfo(path=path, title=_basename)
 
@@ -329,6 +330,8 @@ class PlayerEngine:
         self._last_vol_sync_time: float = 0.0
         self._pipeline_generation: int = 0
         self._replay_gain: int = 0
+        self._replaygain_preamp: float = 0.0
+        self._replaygain_default_preamp: float = 0.0
 
         # Callbacks
         self.on_state_change:    Optional[Callable[[str], None]] = None
@@ -360,6 +363,22 @@ class PlayerEngine:
     @replay_gain.setter
     def replay_gain(self, mode: int) -> None:
         self._replay_gain = max(0, min(2, mode))
+
+    @property
+    def replaygain_preamp(self) -> float:
+        return self._replaygain_preamp
+
+    @replaygain_preamp.setter
+    def replaygain_preamp(self, value: float) -> None:
+        self._replaygain_preamp = float(value)
+
+    @property
+    def replaygain_default_preamp(self) -> float:
+        return self._replaygain_default_preamp
+
+    @replaygain_default_preamp.setter
+    def replaygain_default_preamp(self, value: float) -> None:
+        self._replaygain_default_preamp = float(value)
 
     @property
     def position(self) -> float:
@@ -632,16 +651,13 @@ class PlayerEngine:
             return None
         seek_args = ["-accurate_seek", "-ss", f"{seek_pos:.6f}"] if seek_pos > 0.0 else []
         rg_args = []
-        if self._replay_gain == 1:
-            if t.track_gain_db is not None:
-                rg_args = ["-af", f"volume={t.track_gain_db:.2f}dB"]
+        if self._replay_gain in (1, 2):
+            raw_gain = t.track_gain_db if self._replay_gain == 1 else t.album_gain_db
+            if raw_gain is not None:
+                final_gain_db = raw_gain + self._replaygain_preamp
             else:
-                rg_args = ["-af", "volume=replaygain=track"]
-        elif self._replay_gain == 2:
-            if t.album_gain_db is not None:
-                rg_args = ["-af", f"volume={t.album_gain_db:.2f}dB"]
-            else:
-                rg_args = ["-af", "volume=replaygain=album"]
+                final_gain_db = self._replaygain_default_preamp
+            rg_args = ["-af", f"volume={final_gain_db:.2f}dB"]
 
         cmd = [
             "ffmpeg", "-nostdin", "-v", "quiet",
@@ -666,18 +682,14 @@ class PlayerEngine:
         gst_fmt = _GST_FMT_MAP.get(t.pwcat_fmt.lower(), "S16LE")
 
         rg_filter = ""
-        if self._replay_gain == 1:
-            if t.track_gain_db is not None:
-                vol = 10.0 ** (t.track_gain_db / 20.0)
-                rg_filter = f"! audioconvert ! volume volume={vol:.6f}"
+        if self._replay_gain in (1, 2):
+            raw_gain = t.track_gain_db if self._replay_gain == 1 else t.album_gain_db
+            if raw_gain is not None:
+                final_gain_db = raw_gain + self._replaygain_preamp
             else:
-                rg_filter = "! audioconvert ! rgvolume ! rglimiter"
-        elif self._replay_gain == 2:
-            if t.album_gain_db is not None:
-                vol = 10.0 ** (t.album_gain_db / 20.0)
-                rg_filter = f"! audioconvert ! volume volume={vol:.6f}"
-            else:
-                rg_filter = "! audioconvert ! rgvolume album-mode=true ! rglimiter"
+                final_gain_db = self._replaygain_default_preamp
+            vol = 10.0 ** (final_gain_db / 20.0)
+            rg_filter = f"! audioconvert ! volume volume={vol:.6f}"
 
         py_code = f'''
 import sys, gi
@@ -728,14 +740,17 @@ except Exception:
             and getattr(self, "_pwcat_fmt", None) == target_fmt
         )
 
+        # If pwcat cannot be reused due to native format change, stop old pipeline cleanly first
+        if not can_reuse:
+            if self._pwcat is not None:
+                self._stop_pipeline(keep_pwcat=False)
+
         with self._lock:
             self._pipeline_generation += 1
             gen = self._pipeline_generation
             stop_evt = threading.Event()
             self._stop_event = stop_evt
 
-            self._play_start_pos = self._seek_position
-            self._play_start_time = time.monotonic()
             if self._seek_position == 0.0 and not can_reuse:
                 bytes_per_sec = t.sample_rate * t.channels * t.bytes_per_sample
                 frame_size = t.channels * t.bytes_per_sample
@@ -760,19 +775,15 @@ except Exception:
 
         if proc is None:
             send_error_notification(
-                f"{APP_NAME} Error",
-                f"Audio decoding failed for {os.path.basename(t.path)}. Neither FFmpeg nor GStreamer could process format."
+                _("{app_name} Error").format(app_name=APP_NAME),
+                _("Audio decoding failed for {name}. Neither FFmpeg nor GStreamer could process format.").format(name=os.path.basename(t.path))
             )
             self._ffmpeg = None
             return False
 
         self._ffmpeg = proc
 
-        # If pwcat cannot be reused due to native format change, detach old stream cleanly and start new native pwcat
         if not can_reuse:
-            if self._pwcat is not None:
-                self._stop_pipeline(keep_pwcat=False)
-
             pwcat_cmd = [
                 "pw-cat", "--playback", "--raw",
                 "--format", t.pwcat_fmt,
@@ -796,24 +807,25 @@ except Exception:
                 )
                 self._pwcat_fmt = target_fmt
             except Exception as exc:
-                send_error_notification(APP_NAME, f"Could not start pw-cat: {exc}")
-                if self._ffmpeg:
-                    self._ffmpeg.kill()
-                    self._ffmpeg = None
-                self._pwcat = None
-                self._pwcat_fmt = None
+                send_error_notification(
+                    _("{app_name} Error").format(app_name=APP_NAME),
+                    _("Failed to launch audio output engine (pw-cat): {error}").format(error=exc)
+                )
                 return False
 
-        ffmpeg_proc = self._ffmpeg
-        pwcat_proc  = self._pwcat
+        with self._lock:
+            self._play_start_pos = self._seek_position
+            self._play_start_time = time.monotonic()
 
+        # Launch pump thread
         self._pump_thread = threading.Thread(
             target=self._pump_loop,
-            args=(gen, stop_evt, ffmpeg_proc, pwcat_proc),
+            args=(gen, stop_evt, self._ffmpeg, self._pwcat),
             daemon=True,
             name=f"{APP_NAME}-pump-{gen}",
         )
         self._pump_thread.start()
+
         return True
 
     def _pump_loop(
@@ -875,7 +887,7 @@ except Exception:
                     if self._consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
                         send_error_notification(
                             APP_NAME,
-                            "Playback stopped: audio system or decoder failed repeatedly.",
+                            _("Playback stopped: audio system or decoder failed repeatedly."),
                         )
                         self._set_state(STATE_STOPPED)
                     else:

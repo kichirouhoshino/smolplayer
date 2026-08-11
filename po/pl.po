@@ -1,0 +1,66 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: smolplayer\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-08-11 13:50+0800\n"
+"PO-Revision-Date: 2026-08-11 13:52+0800\n"
+"Last-Translator: smolplayer contributors\n"
+"Language-Team: Polish\n"
+"Language: pl\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Closed after being paused for {mins} minutes to save system resources."
+msgstr "Zamknięto po wstrzymaniu na {mins} min, aby zaoszczędzić zasoby systemu."
+
+msgid "{app_name} File Error"
+msgstr "Błąd pliku {app_name}"
+
+msgid "File or folder does not exist: {name}"
+msgstr "Plik lub folder nie istnieje: {name}"
+
+msgid "Unable to find playable audio files for: {name}"
+msgstr "Nie znaleziono odtwarzalnych plików audio dla: {name}"
+
+msgid "Playback stopped: files or drive are no longer accessible."
+msgstr "Odtwarzanie zatrzymane: pliki lub dysk nie są już dostępne."
+
+msgid "{app_name} runs in the background! Open an audio file in your file manager to start music playback and control it using your desktop media widget."
+msgstr "{app_name} działa w tle! Otwórz plik audio w menedżerze plików, aby rozpocząć odtwarzanie."
+
+msgid "{app_name} - Stopped"
+msgstr "{app_name} - Zatrzymano"
+
+msgid "Playing"
+msgstr "Odtwarzanie"
+
+msgid "Paused"
+msgstr "Wstrzymano"
+
+msgid "{title}{artist} ({state})"
+msgstr "{title}{artist} ({state})"
+
+msgid "Open Config File"
+msgstr "Otwórz plik konfiguracyjny"
+
+msgid "Quit {app_name}"
+msgstr "Zakończ {app_name}"
+
+msgid "{app_name} Error"
+msgstr "Błąd {app_name}"
+
+msgid "Unable to read audio metadata for {name} with FFmpeg or GStreamer."
+msgstr "Nie można odczytać metadanych audio dla {name} przy użyciu FFmpeg lub GStreamer."
+
+msgid "Audio decoding failed for {name}. Neither FFmpeg nor GStreamer could process format."
+msgstr "Dekodowanie audio nie powiodło się dla {name}."
+
+msgid "Could not start pw-cat: {exc}"
+msgstr "Nie można uruchomić pw-cat: {exc}"
+
+msgid "Playback stopped: audio system or decoder failed repeatedly."
+msgstr "Odtwarzanie zatrzymane: system audio lub dekoder wielokrotnie zgłosił błąd."
+
+msgid "{app_name} is already running in the background! Open an audio file in your file manager to start playback."
+msgstr "{app_name} działa już w tle! Otwórz plik audio w menedżerze plików."

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from urllib.parse import unquote, urlparse
 
 from utils import send_notification
+from i18n import _
 from constants import (
     APP_NAME,
     APP_ID,
@@ -385,9 +386,10 @@ def forward_files_to_existing(paths: list[str]) -> bool:
         if not paths:
             send_notification(
                 APP_NAME,
-                f"{APP_NAME} is already running in the background! Open an audio file in your file manager to start playback.",
+                _("{app_name} is already running in the background! Open an audio file in your file manager to start playback.").format(app_name=APP_NAME),
             )
             return True
+
 
         obj = bus.get_object(_BUS_NAME, _OBJ_PATH)
         player = dbus.Interface(obj, _PLAYER)

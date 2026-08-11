@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Any, Callable, Optional
 from config import open_config_file
+from i18n import _
 from constants import (
     APP_NAME,
     APP_ID,
@@ -100,11 +101,11 @@ class TrayService:
     def get_tooltip_text(self) -> str:
         track = self._engine.track
         if not track:
-            return f"{APP_NAME} - Stopped"
-        state_str = "Playing" if self._engine.state == "playing" else "Paused"
+            return _("{app_name} - Stopped").format(app_name=APP_NAME)
+        state_str = _("Playing") if self._engine.state == "playing" else _("Paused")
         title = track.title or os.path.basename(track.path)
         artist = f" - {track.artist}" if track.artist else ""
-        return f"{title}{artist} ({state_str})"
+        return _("{title}{artist} ({state})").format(title=title, artist=artist, state=state_str)
 
 
 if _DBUS_OK:
@@ -187,8 +188,8 @@ if _DBUS_OK:
                 d_props = dbus.Dictionary(props, signature="sv")
                 return (dbus.Int32(id_num), d_props, c_arr)
 
-            config_item = make_item(1, {"label": "Open Config File", "icon-name": "preferences-system"})
-            quit_item = make_item(2, {"label": f"Quit {APP_NAME}", "icon-name": "application-exit"})
+            config_item = make_item(1, {"label": _("Open Config File"), "icon-name": "preferences-system"})
+            quit_item = make_item(2, {"label": _("Quit {app_name}").format(app_name=APP_NAME), "icon-name": "application-exit"})
             root = make_item(0, {}, [config_item, quit_item])
             return (dbus.UInt32(1), root)
 

@@ -20,6 +20,7 @@ from tray import TrayService
 
 from config import get_config, open_config_file
 from constants import APP_NAME
+from i18n import _
 
 
 class AutoCloseManager:
@@ -44,7 +45,7 @@ class AutoCloseManager:
         mins = int(self._timeout_seconds // 60)
         send_notification(
             APP_NAME,
-            f"Closed after being paused for {mins} minutes to save system resources."
+            _("Closed after being paused for {mins} minutes to save system resources.").format(mins=mins)
         )
         if self._on_timeout:
             self._on_timeout()
@@ -103,6 +104,8 @@ def main() -> None:
 
     engine = PlayerEngine()
     engine.replay_gain = cfg.replay_gain
+    engine.replaygain_preamp = cfg.replaygain_preamp
+    engine.replaygain_default_preamp = cfg.replaygain_default_preamp
     playlist = PlaylistManager()
     power_inhibitor = PowerInhibitor()
     loop = MainLoop()
@@ -136,7 +139,7 @@ def main() -> None:
     def handle_open_uri(uri: str) -> None:
         path = normalize_file_path(uri)
         if not os.path.exists(path):
-            send_error_notification(f"{APP_NAME} File Error", f"File or folder does not exist: {os.path.basename(path)}")
+            send_error_notification(_("{app_name} File Error").format(app_name=APP_NAME), _("File or folder does not exist: {name}").format(name=os.path.basename(path)))
             return
 
         current = playlist.load_file_or_folder(path)
@@ -154,7 +157,7 @@ def main() -> None:
                     tray.notify_track(engine.track)
             engine.fetch_cover_async(callback=_on_cover_done)
         else:
-            send_error_notification(f"{APP_NAME} File Error", f"Unable to find playable audio files for: {os.path.basename(path)}")
+            send_error_notification(_("{app_name} File Error").format(app_name=APP_NAME), _("Unable to find playable audio files for: {name}").format(name=os.path.basename(path)))
 
     def handle_track_end() -> None:
         attempts = 0
@@ -184,7 +187,7 @@ def main() -> None:
         if attempts > 0:
             send_notification(
                 APP_NAME,
-                "Playback stopped: files or drive are no longer accessible.",
+                _("Playback stopped: files or drive are no longer accessible."),
             )
 
     engine.on_track_end = handle_track_end
@@ -202,7 +205,7 @@ def main() -> None:
     else:
         send_notification(
             APP_NAME,
-            f"{APP_NAME} runs in the background! Open an audio file in your file manager to start music playback and control it using your desktop media widget.",
+            _("{app_name} runs in the background! Open an audio file in your file manager to start music playback and control it using your desktop media widget.").format(app_name=APP_NAME),
         )
 
     # 2. Register MPRIS D-Bus service while audio is already playing

@@ -6,17 +6,33 @@ __pycache__/
 .venv/
 venv/
 env/
+ENV/
+
+# Test & Lint Caches
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
 # Flatpak build artifacts
 .flatpak-builder/
 build-dir/
+.flatpak-repo/
+*.flatpak
+
+# Compiled translation binaries
+*.mo
 
 # IDE / Editor settings
 .idea/
 .vscode/
 *.swp
 *~
+*.bak
 
 # Operating System
 .DS_Store
 Thumbs.db
+desktop.ini

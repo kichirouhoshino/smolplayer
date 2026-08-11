@@ -99,6 +99,26 @@ class TestConfig(unittest.TestCase):
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
 
+    def test_config_auto_update_missing_options(self) -> None:
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".ini") as f:
+            f.write("[smolplayer]\nreplay_gain = 1\n")
+            tmp_path = f.name
+
+        try:
+            with patch("config._CONFIG_FILE", tmp_path):
+                cfg = get_config()
+                self.assertEqual(cfg.replay_gain, 1)
+                self.assertEqual(cfg.replaygain_preamp, 0.0)
+                self.assertEqual(cfg.replaygain_default_preamp, 0.0)
+                with open(tmp_path, "r", encoding="utf-8") as f_read:
+                    content = f_read.read()
+                    self.assertIn("replaygain_preamp = 0", content)
+                    self.assertIn("replaygain_default_preamp = 0", content)
+                    self.assertIn("replay_gain = 1", content)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
     def test_open_config_file(self) -> None:
         with patch("subprocess.Popen") as mock_popen:
             open_config_file()
@@ -244,16 +264,20 @@ class TestPlayerEngine(unittest.TestCase):
         self.assertGreaterEqual(self.engine.volume, 0.0)
 
     def test_replaygain_cmd_args(self) -> None:
-        t = TrackInfo(path="/tmp/fake.flac", duration=180.0)
-        self.engine.replay_gain = 1
+        # Off: No gain filter applied
+        t_no_gain = TrackInfo(path="/tmp/fake.flac", duration=180.0)
+        self.engine.replay_gain = 0
+        self.engine.replaygain_preamp = 3.0
+        self.engine.replaygain_default_preamp = -2.0
         with patch("subprocess.Popen") as mock_popen, patch("shutil.which", return_value="/usr/bin/ffmpeg"):
             mock_popen.return_value.poll.return_value = None
-            proc = self.engine._spawn_ffmpeg_proc(t, 0.0)
+            proc = self.engine._spawn_ffmpeg_proc(t_no_gain, 0.0)
             self.assertIsNotNone(proc)
             cmd = mock_popen.call_args[0][0]
-            self.assertIn("-af", cmd)
-            self.assertIn("volume=replaygain=track", cmd)
+            self.assertNotIn("-af", cmd)
 
+        # Track Gain ON with RG info and preamp
+        self.engine.replay_gain = 1
         t_gain = TrackInfo(path="/tmp/fake.flac", duration=180.0, track_gain_db=-3.50)
         with patch("subprocess.Popen") as mock_popen, patch("shutil.which", return_value="/usr/bin/ffmpeg"):
             mock_popen.return_value.poll.return_value = None
@@ -261,7 +285,16 @@ class TestPlayerEngine(unittest.TestCase):
             self.assertIsNotNone(proc)
             cmd = mock_popen.call_args[0][0]
             self.assertIn("-af", cmd)
-            self.assertIn("volume=-3.50dB", cmd)
+            self.assertIn("volume=-0.50dB", cmd)  # -3.50 + 3.0 = -0.50
+
+        # Track Gain ON without RG info (uses default preamp)
+        with patch("subprocess.Popen") as mock_popen, patch("shutil.which", return_value="/usr/bin/ffmpeg"):
+            mock_popen.return_value.poll.return_value = None
+            proc = self.engine._spawn_ffmpeg_proc(t_no_gain, 0.0)
+            self.assertIsNotNone(proc)
+            cmd = mock_popen.call_args[0][0]
+            self.assertIn("-af", cmd)
+            self.assertIn("volume=-2.00dB", cmd)
 
     def test_decoder_fallback_when_ffmpeg_missing(self) -> None:
         t = TrackInfo(path="/tmp/fake.flac", duration=180.0)
@@ -327,6 +360,29 @@ class TestPlayerEngine(unittest.TestCase):
 
         self.assertEqual(self.engine._pipeline_generation, initial_gen + 20)
         self.assertEqual(self.engine.state, STATE_PLAYING)
+
+    def test_seeking_position_timestamp_progression(self) -> None:
+        t = TrackInfo(
+            path="/tmp/fake.flac",
+            title="Fake",
+            duration=180.0,
+            sample_rate=44100,
+            channels=2,
+            pwcat_fmt="s16",
+            ffmpeg_fmt="s16le",
+            bytes_per_sample=2,
+        )
+        self.engine._track = t
+        self.engine._state = STATE_PLAYING
+
+        with patch("subprocess.Popen") as mock_popen:
+            mock_popen.return_value.poll.return_value = None
+            mock_popen.return_value.stdout = MagicMock()
+            mock_popen.return_value.stdin = MagicMock()
+
+            self.engine.seek(45.0)
+            self.assertAlmostEqual(self.engine.position, 45.0, delta=0.5)
+            self.assertEqual(self.engine._play_start_pos, 45.0)
 
 
 class TestTrayService(unittest.TestCase):
@@ -394,6 +450,53 @@ class TestMainCLI(unittest.TestCase):
                 main()
             self.assertEqual(cm.exception.code, 0)
             mock_quit.assert_called_once()
+
+
+class TestI18n(unittest.TestCase):
+    def test_i18n_fallback_and_translation(self) -> None:
+        from i18n import _
+        self.assertEqual(_("Open Config File"), "Open Config File")
+
+        import gettext
+        loc_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "locale")
+        t_es = gettext.translation("smolplayer", localedir=loc_dir, languages=["es"], fallback=True)
+        self.assertEqual(t_es.gettext("Open Config File"), "Abrir archivo de configuración")
+
+        t_zh = gettext.translation("smolplayer", localedir=loc_dir, languages=["zh_CN"], fallback=True)
+        self.assertEqual(t_zh.gettext("Open Config File"), "打开配置文件")
+
+        t_de = gettext.translation("smolplayer", localedir=loc_dir, languages=["de"], fallback=True)
+        self.assertEqual(t_de.gettext("Open Config File"), "Konfigurationsdatei öffnen")
+
+        t_fr = gettext.translation("smolplayer", localedir=loc_dir, languages=["fr"], fallback=True)
+        self.assertEqual(t_fr.gettext("Open Config File"), "Ouvrir le fichier de configuration")
+
+        t_ja = gettext.translation("smolplayer", localedir=loc_dir, languages=["ja"], fallback=True)
+        self.assertEqual(t_ja.gettext("Open Config File"), "設定ファイルを開く")
+
+        t_pt = gettext.translation("smolplayer", localedir=loc_dir, languages=["pt_BR"], fallback=True)
+        self.assertEqual(t_pt.gettext("Open Config File"), "Abrir arquivo de configuração")
+
+        t_ru = gettext.translation("smolplayer", localedir=loc_dir, languages=["ru"], fallback=True)
+        self.assertEqual(t_ru.gettext("Open Config File"), "Открыть файл конфигурации")
+
+        t_it = gettext.translation("smolplayer", localedir=loc_dir, languages=["it"], fallback=True)
+        self.assertEqual(t_it.gettext("Open Config File"), "Apri file di configurazione")
+
+        t_ar = gettext.translation("smolplayer", localedir=loc_dir, languages=["ar"], fallback=True)
+        self.assertEqual(t_ar.gettext("Open Config File"), "فتح ملف التكوين")
+
+        t_ko = gettext.translation("smolplayer", localedir=loc_dir, languages=["ko"], fallback=True)
+        self.assertEqual(t_ko.gettext("Open Config File"), "설정 파일 열기")
+
+        t_pl = gettext.translation("smolplayer", localedir=loc_dir, languages=["pl"], fallback=True)
+        self.assertEqual(t_pl.gettext("Open Config File"), "Otwórz plik konfiguracyjny")
+
+        t_tr = gettext.translation("smolplayer", localedir=loc_dir, languages=["tr"], fallback=True)
+        self.assertEqual(t_tr.gettext("Open Config File"), "Yapılandırma Dosyasını Aç")
+
+        t_nl = gettext.translation("smolplayer", localedir=loc_dir, languages=["nl"], fallback=True)
+        self.assertEqual(t_nl.gettext("Open Config File"), "Configuratiebestand openen")
 
 
 

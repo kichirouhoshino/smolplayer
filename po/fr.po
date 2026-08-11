@@ -1,0 +1,66 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: smolplayer\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-08-11 13:50+0800\n"
+"PO-Revision-Date: 2026-08-11 13:51+0800\n"
+"Last-Translator: smolplayer contributors\n"
+"Language-Team: French\n"
+"Language: fr\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Closed after being paused for {mins} minutes to save system resources."
+msgstr "Fermé après avoir été en pause pendant {mins} minutes pour économiser les ressources système."
+
+msgid "{app_name} File Error"
+msgstr "Erreur de fichier {app_name}"
+
+msgid "File or folder does not exist: {name}"
+msgstr "Le fichier ou dossier n'existe pas : {name}"
+
+msgid "Unable to find playable audio files for: {name}"
+msgstr "Impossible de trouver des fichiers audio lisibles pour : {name}"
+
+msgid "Playback stopped: files or drive are no longer accessible."
+msgstr "Lecture arrêtée : les fichiers ou le lecteur ne sont plus accessibles."
+
+msgid "{app_name} runs in the background! Open an audio file in your file manager to start music playback and control it using your desktop media widget."
+msgstr "{app_name} s'exécute en arrière-plan ! Ouvrez un fichier audio dans votre gestionnaire de fichiers pour lancer la lecture."
+
+msgid "{app_name} - Stopped"
+msgstr "{app_name} - Arrêté"
+
+msgid "Playing"
+msgstr "En cours de lecture"
+
+msgid "Paused"
+msgstr "En pause"
+
+msgid "{title}{artist} ({state})"
+msgstr "{title}{artist} ({state})"
+
+msgid "Open Config File"
+msgstr "Ouvrir le fichier de configuration"
+
+msgid "Quit {app_name}"
+msgstr "Quitter {app_name}"
+
+msgid "{app_name} Error"
+msgstr "Erreur {app_name}"
+
+msgid "Unable to read audio metadata for {name} with FFmpeg or GStreamer."
+msgstr "Impossible de lire les métadonnées audio pour {name} avec FFmpeg ou GStreamer."
+
+msgid "Audio decoding failed for {name}. Neither FFmpeg nor GStreamer could process format."
+msgstr "Échec du décodage audio pour {name}. Ni FFmpeg ni GStreamer n'ont pu traiter le format."
+
+msgid "Could not start pw-cat: {exc}"
+msgstr "Impossible de démarrer pw-cat : {exc}"
+
+msgid "Playback stopped: audio system or decoder failed repeatedly."
+msgstr "Lecture arrêtée : le système audio ou le décodeur a échoué à plusieurs reprises."
+
+msgid "{app_name} is already running in the background! Open an audio file in your file manager to start playback."
+msgstr "{app_name} est déjà en cours d'exécution en arrière-plan ! Ouvrez un fichier audio dans votre gestionnaire de fichiers."

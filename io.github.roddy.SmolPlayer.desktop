@@ -1,7 +1,33 @@
 [Desktop Entry]
 Name=smolplayer
 GenericName=Music Player
+GenericName[ar]=مشغل موسيقى
+GenericName[de]=Musikplayer
+GenericName[es]=Reproductor de música
+GenericName[fr]=Lecteur de musique
+GenericName[it]=Lettore musicale
+GenericName[ja]=音楽プレーヤー
+GenericName[ko]=음악 플레이어
+GenericName[nl]=Muziekspeler
+GenericName[pl]=Odtwarzacz muzyki
+GenericName[pt_BR]=Reprodutor de música
+GenericName[ru]=Музыкальный проигрыватель
+GenericName[tr]=Müzik Çalar
+GenericName[zh_CN]=音乐播放器
 Comment=A music player with no GUI
+Comment[ar]=مشغل موسيقى بدون واجهة رسومية
+Comment[de]=Ein Musikplayer ohne GUI
+Comment[es]=Un reproductor de música sin GUI
+Comment[fr]=Un lecteur de musique sans interface graphique
+Comment[it]=Un lettore musicale senza GUI
+Comment[ja]=GUIのない音楽プレーヤー
+Comment[ko]=GUI가 없는 음악 플레이어
+Comment[nl]=Een muziekspeler zonder GUI
+Comment[pl]=Odtwarzacz muzyki bez GUI
+Comment[pt_BR]=Um reprodutor de música sem GUI
+Comment[ru]=Музыкальный проигрыватель без GUI
+Comment[tr]=GUI'si olmayan bir müzik çalar
+Comment[zh_CN]=无 GUI 音乐播放器
 Exec=smolplayer %U
 Icon=io.github.roddy.SmolPlayer
 Terminal=false
@@ -13,9 +39,34 @@ Actions=Close;Configure;
 
 [Desktop Action Close]
 Name=Close smolplayer
+Name[ar]=إغلاق smolplayer
+Name[de]=smolplayer beenden
+Name[es]=Cerrar smolplayer
+Name[fr]=Fermer smolplayer
+Name[it]=Chiudi smolplayer
+Name[ja]=smolplayer を終了
+Name[ko]=smolplayer 닫기
+Name[nl]=smolplayer sluiten
+Name[pl]=Zamknij smolplayer
+Name[pt_BR]=Fechar smolplayer
+Name[ru]=Закрыть smolplayer
+Name[tr]=smolplayer'ı kapat
+Name[zh_CN]=关闭 smolplayer
 Exec=smolplayer --close
 
 [Desktop Action Configure]
 Name=Open Config File
+Name[ar]=فتح ملف التكوين
+Name[de]=Konfigurationsdatei öffnen
+Name[es]=Abrir archivo de configuración
+Name[fr]=Ouvrir le fichier de configuration
+Name[it]=Apri file di configurazione
+Name[ja]=設定ファイルを開く
+Name[ko]=설정 파일 열기
+Name[nl]=Configuratiebestand openen
+Name[pl]=Otwórz plik konfiguracyjny
+Name[pt_BR]=Abrir arquivo de configuração
+Name[ru]=Открыть файл конфигурации
+Name[tr]=Yapılandırma Dosyasını Aç
+Name[zh_CN]=打开配置文件
 Exec=smolplayer --config
-

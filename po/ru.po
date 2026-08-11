@@ -1,0 +1,66 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: smolplayer\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-08-11 13:50+0800\n"
+"PO-Revision-Date: 2026-08-11 13:51+0800\n"
+"Last-Translator: smolplayer contributors\n"
+"Language-Team: Russian\n"
+"Language: ru\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Closed after being paused for {mins} minutes to save system resources."
+msgstr "Закрыто после {mins} мин паузы для экономии системных ресурсов."
+
+msgid "{app_name} File Error"
+msgstr "Ошибка файла {app_name}"
+
+msgid "File or folder does not exist: {name}"
+msgstr "Файл или папка не существует: {name}"
+
+msgid "Unable to find playable audio files for: {name}"
+msgstr "Не удалось найти воспроизводимые аудиофайлы для: {name}"
+
+msgid "Playback stopped: files or drive are no longer accessible."
+msgstr "Воспроизведение остановлено: файлы или диск больше недоступны."
+
+msgid "{app_name} runs in the background! Open an audio file in your file manager to start music playback and control it using your desktop media widget."
+msgstr "{app_name} работает в фоновом режиме! Откройте аудиофайл в файловом менеджере, чтобы начать воспроизведение."
+
+msgid "{app_name} - Stopped"
+msgstr "{app_name} - Остановлено"
+
+msgid "Playing"
+msgstr "Воспроизведение"
+
+msgid "Paused"
+msgstr "Пауза"
+
+msgid "{title}{artist} ({state})"
+msgstr "{title}{artist} ({state})"
+
+msgid "Open Config File"
+msgstr "Открыть файл конфигурации"
+
+msgid "Quit {app_name}"
+msgstr "Выйти из {app_name}"
+
+msgid "{app_name} Error"
+msgstr "Ошибка {app_name}"
+
+msgid "Unable to read audio metadata for {name} with FFmpeg or GStreamer."
+msgstr "Не удалось прочитать метаданные аудио для {name} через FFmpeg или GStreamer."
+
+msgid "Audio decoding failed for {name}. Neither FFmpeg nor GStreamer could process format."
+msgstr "Сбой декодирования аудио для {name}. Ни FFmpeg, ни GStreamer не смогли обработать формат."
+
+msgid "Could not start pw-cat: {exc}"
+msgstr "Не удалось запустить pw-cat: {exc}"
+
+msgid "Playback stopped: audio system or decoder failed repeatedly."
+msgstr "Воспроизведение остановлено: аудиосистема или декодер неоднократно сбоили."
+
+msgid "{app_name} is already running in the background! Open an audio file in your file manager to start playback."
+msgstr "{app_name} уже работает в фоновом режиме! Откройте аудиофайл в файловом менеджере для воспроизведения."
