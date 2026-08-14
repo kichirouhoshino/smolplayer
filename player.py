@@ -332,6 +332,7 @@ class PlayerEngine:
         self._replay_gain: int = 0
         self._replaygain_preamp: float = 0.0
         self._replaygain_default_preamp: float = 0.0
+        self._audiophile_mode: int = 0
 
         # Callbacks
         self.on_state_change:    Optional[Callable[[str], None]] = None
@@ -379,6 +380,14 @@ class PlayerEngine:
     @replaygain_default_preamp.setter
     def replaygain_default_preamp(self, value: float) -> None:
         self._replaygain_default_preamp = float(value)
+
+    @property
+    def audiophile_mode(self) -> int:
+        return self._audiophile_mode
+
+    @audiophile_mode.setter
+    def audiophile_mode(self, mode: int) -> None:
+        self._audiophile_mode = int(mode)
 
     @property
     def position(self) -> float:
@@ -650,14 +659,19 @@ class PlayerEngine:
         if not shutil.which("ffmpeg"):
             return None
         seek_args = ["-accurate_seek", "-ss", f"{seek_pos:.6f}"] if seek_pos > 0.0 else []
-        rg_args = []
+        filters = []
         if self._replay_gain in (1, 2):
             raw_gain = t.track_gain_db if self._replay_gain == 1 else t.album_gain_db
             if raw_gain is not None:
                 final_gain_db = raw_gain + self._replaygain_preamp
             else:
                 final_gain_db = self._replaygain_default_preamp
-            rg_args = ["-af", f"volume={final_gain_db:.2f}dB"]
+            filters.append(f"volume={final_gain_db:.2f}dB")
+
+        if self._audiophile_mode == 1:
+            filters.append("aresample=resampler=soxr:precision=33:dither_method=triangular")
+
+        rg_args = ["-af", ",".join(filters)] if filters else []
 
         cmd = [
             "ffmpeg", "-nostdin", "-v", "quiet",
@@ -689,7 +703,10 @@ class PlayerEngine:
             else:
                 final_gain_db = self._replaygain_default_preamp
             vol = 10.0 ** (final_gain_db / 20.0)
-            rg_filter = f"! audioconvert ! volume volume={vol:.6f}"
+            rg_filter += f"! audioconvert ! volume volume={vol:.6f} "
+
+        if self._audiophile_mode == 1:
+            rg_filter += "! audioresample quality=10 ! audioconvert dithering=tpdf "
 
         py_code = f'''
 import sys, gi
@@ -740,17 +757,14 @@ except Exception:
             and getattr(self, "_pwcat_fmt", None) == target_fmt
         )
 
-        # If pwcat cannot be reused due to native format change, stop old pipeline cleanly first
-        if not can_reuse:
-            if self._pwcat is not None:
-                self._stop_pipeline(keep_pwcat=False)
-
         with self._lock:
             self._pipeline_generation += 1
             gen = self._pipeline_generation
             stop_evt = threading.Event()
             self._stop_event = stop_evt
 
+            self._play_start_pos = self._seek_position
+            self._play_start_time = time.monotonic()
             if self._seek_position == 0.0 and not can_reuse:
                 bytes_per_sec = t.sample_rate * t.channels * t.bytes_per_sample
                 frame_size = t.channels * t.bytes_per_sample
@@ -783,7 +797,11 @@ except Exception:
 
         self._ffmpeg = proc
 
+        # If pwcat cannot be reused due to native format change, detach old stream cleanly and start new native pwcat
         if not can_reuse:
+            if self._pwcat is not None:
+                self._stop_pipeline(keep_pwcat=False)
+
             pwcat_cmd = [
                 "pw-cat", "--playback", "--raw",
                 "--format", t.pwcat_fmt,
@@ -807,25 +825,24 @@ except Exception:
                 )
                 self._pwcat_fmt = target_fmt
             except Exception as exc:
-                send_error_notification(
-                    _("{app_name} Error").format(app_name=APP_NAME),
-                    _("Failed to launch audio output engine (pw-cat): {error}").format(error=exc)
-                )
+                send_error_notification(APP_NAME, _("Could not start pw-cat: {exc}").format(exc=exc))
+                if self._ffmpeg:
+                    self._ffmpeg.kill()
+                    self._ffmpeg = None
+                self._pwcat = None
+                self._pwcat_fmt = None
                 return False
 
-        with self._lock:
-            self._play_start_pos = self._seek_position
-            self._play_start_time = time.monotonic()
+        ffmpeg_proc = self._ffmpeg
+        pwcat_proc  = self._pwcat
 
-        # Launch pump thread
         self._pump_thread = threading.Thread(
             target=self._pump_loop,
-            args=(gen, stop_evt, self._ffmpeg, self._pwcat),
+            args=(gen, stop_evt, ffmpeg_proc, pwcat_proc),
             daemon=True,
             name=f"{APP_NAME}-pump-{gen}",
         )
         self._pump_thread.start()
-
         return True
 
     def _pump_loop(

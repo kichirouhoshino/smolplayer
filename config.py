@@ -89,6 +89,14 @@ remember_toggles = 0
 # If a format is not available on one method, it will fallback to the other
 # Defaults to 0
 decode_method = 0
+
+# Audiophile Mode
+# Uses FFmpeg's highest quality internal resampler (soxr with triangular dither and max precision)
+# when formats don't match what's required by the output device.
+# 0 - Disabled (recommended: zero processing, PipeWire handles resampling efficiently)
+# 1 - Enabled (uses FFmpeg/GStreamer highest quality soxr/tpdf resampler + dither; higher CPU usage)
+# Default is 0
+audiophile_mode = 0
 """
 
 
@@ -173,6 +181,15 @@ _OPTION_BLOCKS: dict[str, str] = {
         "# Defaults to 0\n"
         "decode_method = 0\n"
     ),
+    "audiophile_mode": (
+        "\n# Audiophile Mode\n"
+        "# Uses FFmpeg's highest quality internal resampler (soxr with triangular dither and max precision)\n"
+        "# when formats don't match what's required by the output device.\n"
+        "# 0 - Disabled (recommended: zero processing, PipeWire handles resampling efficiently)\n"
+        "# 1 - Enabled (uses FFmpeg/GStreamer highest quality soxr/tpdf resampler + dither; higher CPU usage)\n"
+        "# Default is 0\n"
+        "audiophile_mode = 0\n"
+    ),
 }
 
 
@@ -189,6 +206,7 @@ class Config:
     presence: int = 0
     remember_toggles: int = 0
     decode_method: int = 0
+    audiophile_mode: int = 0
 
     @property
     def tray_enabled(self) -> bool:
@@ -239,6 +257,7 @@ def get_config() -> Config:
             cfg.presence = sec.getint("presence", 0)
             cfg.remember_toggles = sec.getint("remember_toggles", 0)
             cfg.decode_method = sec.getint("decode_method", 0)
+            cfg.audiophile_mode = sec.getint("audiophile_mode", 0)
     except Exception:
         pass
 

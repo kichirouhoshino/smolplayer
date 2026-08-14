@@ -106,6 +106,7 @@ def main() -> None:
     engine.replay_gain = cfg.replay_gain
     engine.replaygain_preamp = cfg.replaygain_preamp
     engine.replaygain_default_preamp = cfg.replaygain_default_preamp
+    engine.audiophile_mode = cfg.audiophile_mode
     playlist = PlaylistManager()
     power_inhibitor = PowerInhibitor()
     loop = MainLoop()

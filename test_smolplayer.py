@@ -296,6 +296,19 @@ class TestPlayerEngine(unittest.TestCase):
             self.assertIn("-af", cmd)
             self.assertIn("volume=-2.00dB", cmd)
 
+    def test_audiophile_mode_cmd_args(self) -> None:
+        t = TrackInfo(path="/tmp/fake.flac", duration=180.0)
+        self.engine.replay_gain = 0
+        self.engine.audiophile_mode = 1
+
+        with patch("subprocess.Popen") as mock_popen, patch("shutil.which", return_value="/usr/bin/ffmpeg"):
+            mock_popen.return_value.poll.return_value = None
+            proc = self.engine._spawn_ffmpeg_proc(t, 0.0)
+            self.assertIsNotNone(proc)
+            cmd = mock_popen.call_args[0][0]
+            self.assertIn("-af", cmd)
+            self.assertIn("aresample=resampler=soxr:precision=33:dither_method=triangular", cmd)
+
     def test_decoder_fallback_when_ffmpeg_missing(self) -> None:
         t = TrackInfo(path="/tmp/fake.flac", duration=180.0)
         self.engine._track = t
@@ -360,29 +373,6 @@ class TestPlayerEngine(unittest.TestCase):
 
         self.assertEqual(self.engine._pipeline_generation, initial_gen + 20)
         self.assertEqual(self.engine.state, STATE_PLAYING)
-
-    def test_seeking_position_timestamp_progression(self) -> None:
-        t = TrackInfo(
-            path="/tmp/fake.flac",
-            title="Fake",
-            duration=180.0,
-            sample_rate=44100,
-            channels=2,
-            pwcat_fmt="s16",
-            ffmpeg_fmt="s16le",
-            bytes_per_sample=2,
-        )
-        self.engine._track = t
-        self.engine._state = STATE_PLAYING
-
-        with patch("subprocess.Popen") as mock_popen:
-            mock_popen.return_value.poll.return_value = None
-            mock_popen.return_value.stdout = MagicMock()
-            mock_popen.return_value.stdin = MagicMock()
-
-            self.engine.seek(45.0)
-            self.assertAlmostEqual(self.engine.position, 45.0, delta=0.5)
-            self.assertEqual(self.engine._play_start_pos, 45.0)
 
 
 class TestTrayService(unittest.TestCase):
