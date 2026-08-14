@@ -81,12 +81,16 @@ if _DBUS_OK:
         # ---------------------------------------------------------------
 
         def notify_state(self, state: str) -> None:
+            pos_us = _us(self._engine.position)
             changed = {
                 "PlaybackStatus": self._playback_status(state),
                 "CanPause": dbus.Boolean(state == "playing"),
                 "CanSeek": dbus.Boolean(state != "stopped"),
+                "Position": pos_us,
             }
             self.PropertiesChanged(_PLAYER, changed, [])
+            if state in ("playing", "paused"):
+                self.notify_seeked(self._engine.position)
 
         def notify_track(self, info: Optional[TrackInfo], index: int) -> None:
             self.PropertiesChanged(
@@ -97,6 +101,7 @@ if _DBUS_OK:
                     "CanGoPrevious": dbus.Boolean(self._playlist.can_go_previous()),
                     "CanPlay": dbus.Boolean(True),
                     "CanSeek": dbus.Boolean(True),
+                    "Position": _us(self._engine.position),
                 },
                 [],
             )
