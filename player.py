@@ -740,17 +740,14 @@ except Exception:
             and getattr(self, "_pwcat_fmt", None) == target_fmt
         )
 
-        # If pwcat cannot be reused due to native format change, stop old pipeline cleanly first
-        if not can_reuse:
-            if self._pwcat is not None:
-                self._stop_pipeline(keep_pwcat=False)
-
         with self._lock:
             self._pipeline_generation += 1
             gen = self._pipeline_generation
             stop_evt = threading.Event()
             self._stop_event = stop_evt
 
+            self._play_start_pos = self._seek_position
+            self._play_start_time = time.monotonic()
             if self._seek_position == 0.0 and not can_reuse:
                 bytes_per_sec = t.sample_rate * t.channels * t.bytes_per_sample
                 frame_size = t.channels * t.bytes_per_sample
@@ -783,7 +780,11 @@ except Exception:
 
         self._ffmpeg = proc
 
+        # If pwcat cannot be reused due to native format change, detach old stream cleanly and start new native pwcat
         if not can_reuse:
+            if self._pwcat is not None:
+                self._stop_pipeline(keep_pwcat=False)
+
             pwcat_cmd = [
                 "pw-cat", "--playback", "--raw",
                 "--format", t.pwcat_fmt,
@@ -807,25 +808,24 @@ except Exception:
                 )
                 self._pwcat_fmt = target_fmt
             except Exception as exc:
-                send_error_notification(
-                    _("{app_name} Error").format(app_name=APP_NAME),
-                    _("Failed to launch audio output engine (pw-cat): {error}").format(error=exc)
-                )
+                send_error_notification(APP_NAME, _("Could not start pw-cat: {exc}").format(exc=exc))
+                if self._ffmpeg:
+                    self._ffmpeg.kill()
+                    self._ffmpeg = None
+                self._pwcat = None
+                self._pwcat_fmt = None
                 return False
 
-        with self._lock:
-            self._play_start_pos = self._seek_position
-            self._play_start_time = time.monotonic()
+        ffmpeg_proc = self._ffmpeg
+        pwcat_proc  = self._pwcat
 
-        # Launch pump thread
         self._pump_thread = threading.Thread(
             target=self._pump_loop,
-            args=(gen, stop_evt, self._ffmpeg, self._pwcat),
+            args=(gen, stop_evt, ffmpeg_proc, pwcat_proc),
             daemon=True,
             name=f"{APP_NAME}-pump-{gen}",
         )
         self._pump_thread.start()
-
         return True
 
     def _pump_loop(

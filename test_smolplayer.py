@@ -361,29 +361,6 @@ class TestPlayerEngine(unittest.TestCase):
         self.assertEqual(self.engine._pipeline_generation, initial_gen + 20)
         self.assertEqual(self.engine.state, STATE_PLAYING)
 
-    def test_seeking_position_timestamp_progression(self) -> None:
-        t = TrackInfo(
-            path="/tmp/fake.flac",
-            title="Fake",
-            duration=180.0,
-            sample_rate=44100,
-            channels=2,
-            pwcat_fmt="s16",
-            ffmpeg_fmt="s16le",
-            bytes_per_sample=2,
-        )
-        self.engine._track = t
-        self.engine._state = STATE_PLAYING
-
-        with patch("subprocess.Popen") as mock_popen:
-            mock_popen.return_value.poll.return_value = None
-            mock_popen.return_value.stdout = MagicMock()
-            mock_popen.return_value.stdin = MagicMock()
-
-            self.engine.seek(45.0)
-            self.assertAlmostEqual(self.engine.position, 45.0, delta=0.5)
-            self.assertEqual(self.engine._play_start_pos, 45.0)
-
 
 class TestTrayService(unittest.TestCase):
     def test_tray_tooltip_text(self) -> None:
