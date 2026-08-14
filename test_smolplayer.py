@@ -19,7 +19,10 @@ from utils import (
     write_cover_art,
 )
 from playlist import PlaylistManager, scan_audio_files_recursive
-from player import PlayerEngine, TrackInfo, STATE_PLAYING, STATE_PAUSED, STATE_STOPPED
+from player import (
+    PlayerEngine, TrackInfo, STATE_PLAYING, STATE_PAUSED, STATE_STOPPED,
+    get_system_sink_info,
+)
 from tray import TrayService
 from mpris import _track_id
 from config import Config, get_config, open_config_file, get_config_file_path
@@ -307,7 +310,60 @@ class TestPlayerEngine(unittest.TestCase):
             self.assertIsNotNone(proc)
             cmd = mock_popen.call_args[0][0]
             self.assertIn("-af", cmd)
-            self.assertIn("aresample=resampler=soxr:precision=33:dither_method=triangular", cmd)
+            af_arg = cmd[cmd.index("-af") + 1]
+            self.assertIn("resampler=soxr:precision=33:dither_method=triangular", af_arg)
+
+    def test_get_system_sink_info_default_sink_matching(self) -> None:
+        pactl_info = "Server Name: PulseAudio (on PipeWire 1.6.8)\nDefault Sink: alsa_output.usb-ZiShan_Z3\n"
+        pactl_sinks = (
+            "Name: alsa_output.pci-hdmi\n"
+            "Sample Specification: s32le 2ch 48000Hz\n\n"
+            "Name: alsa_output.usb-ZiShan_Z3\n"
+            "Sample Specification: s16le 2ch 48000Hz\n"
+        )
+        def fake_run(cmd, capture_output=True, text=True, timeout=2):
+            mock_res = MagicMock()
+            mock_res.returncode = 0
+            if "info" in cmd:
+                mock_res.stdout = pactl_info
+            else:
+                mock_res.stdout = pactl_sinks
+            return mock_res
+
+        with patch("subprocess.run", side_effect=fake_run):
+            pw_fmt, rate = get_system_sink_info()
+            self.assertEqual(pw_fmt, "s16")
+            self.assertEqual(rate, 48000)
+
+    def test_audiophile_mode_format_and_rate_matching(self) -> None:
+        t = TrackInfo(path="/tmp/fake_24bit.flac", duration=180.0, pwcat_fmt="s32", sample_rate=44100)
+        self.engine.replay_gain = 0
+        self.engine.audiophile_mode = 1
+
+        with patch("player.get_system_sink_info", return_value=("s16", 48000)), \
+             patch("subprocess.Popen") as mock_popen, \
+             patch("shutil.which", return_value="/usr/bin/ffmpeg"):
+            mock_popen.return_value.poll.return_value = None
+            proc = self.engine._spawn_ffmpeg_proc(t, 0.0)
+            self.assertIsNotNone(proc)
+            cmd = mock_popen.call_args[0][0]
+            self.assertIn("-f", cmd)
+            self.assertEqual(cmd[cmd.index("-f") + 1], "s16le")
+
+            # Launch pipeline pw-cat arguments test
+            self.engine._track = t
+            self.engine._launch_pipeline()
+            pwcat_call = None
+            for call_item in mock_popen.call_args_list:
+                args = call_item[0][0]
+                if isinstance(args, list) and len(args) > 0 and args[0] == "pw-cat":
+                    pwcat_call = args
+                    break
+            self.assertIsNotNone(pwcat_call)
+            self.assertIn("--format", pwcat_call)
+            self.assertEqual(pwcat_call[pwcat_call.index("--format") + 1], "s16")
+            self.assertIn("--rate", pwcat_call)
+            self.assertEqual(pwcat_call[pwcat_call.index("--rate") + 1], "48000")
 
     def test_decoder_fallback_when_ffmpeg_missing(self) -> None:
         t = TrackInfo(path="/tmp/fake.flac", duration=180.0)

@@ -93,6 +93,7 @@ decode_method = 0
 # Audiophile Mode
 # Uses FFmpeg's highest quality internal resampler (soxr with triangular dither and max precision)
 # when formats don't match what's required by the output device.
+# NOTE: Highly discouraged, as this adds significantly more CPU usage and PipeWire already does this task well!
 # 0 - Disabled (recommended: zero processing, PipeWire handles resampling efficiently)
 # 1 - Enabled (uses FFmpeg/GStreamer highest quality soxr/tpdf resampler + dither; higher CPU usage)
 # Default is 0
@@ -185,6 +186,7 @@ _OPTION_BLOCKS: dict[str, str] = {
         "\n# Audiophile Mode\n"
         "# Uses FFmpeg's highest quality internal resampler (soxr with triangular dither and max precision)\n"
         "# when formats don't match what's required by the output device.\n"
+        "# NOTE: Highly discouraged, as this adds significantly more CPU usage and PipeWire already does this task well!\n"
         "# 0 - Disabled (recommended: zero processing, PipeWire handles resampling efficiently)\n"
         "# 1 - Enabled (uses FFmpeg/GStreamer highest quality soxr/tpdf resampler + dither; higher CPU usage)\n"
         "# Default is 0\n"

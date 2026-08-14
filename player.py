@@ -102,6 +102,39 @@ def extract_cover(path: str) -> Optional[bytes]:
         return None
 
 
+def get_system_sink_info() -> tuple[str, int]:
+    """Query current active default PipeWire sink sample format ('s16' or 's32') and sample rate."""
+    try:
+        default_sink = None
+        res_info = subprocess.run(["pactl", "info"], capture_output=True, text=True, timeout=2)
+        if res_info.returncode == 0:
+            for line in res_info.stdout.splitlines():
+                if line.startswith("Default Sink:"):
+                    default_sink = line.split("Default Sink:")[1].strip()
+                    break
+
+        res_sinks = subprocess.run(["pactl", "list", "sinks"], capture_output=True, text=True, timeout=2)
+        if res_sinks.returncode == 0:
+            current_name = None
+            for line in res_sinks.stdout.splitlines():
+                s = line.strip()
+                if s.startswith("Name:"):
+                    current_name = s.split("Name:")[1].strip()
+                elif "Sample Specification:" in s:
+                    m = re.search(r"(\w+)\s+\d+ch\s+(\d+)Hz", s)
+                    if m:
+                        fmt_str = m.group(1).lower()
+                        rate = int(m.group(2))
+                        pw_fmt = "s16" if "s16" in fmt_str else "s32"
+                        if default_sink and current_name == default_sink:
+                            return pw_fmt, rate
+                        elif not default_sink:
+                            return pw_fmt, rate
+    except Exception:
+        pass
+    return "s16", 48000
+
+
 import shutil
 from config import get_config
 
@@ -654,7 +687,6 @@ class PlayerEngine:
             time.sleep(0.1)
         return None
 
-
     def _spawn_ffmpeg_proc(self, t: TrackInfo, seek_pos: float) -> Optional[subprocess.Popen]:
         if not shutil.which("ffmpeg"):
             return None
@@ -668,8 +700,11 @@ class PlayerEngine:
                 final_gain_db = self._replaygain_default_preamp
             filters.append(f"volume={final_gain_db:.2f}dB")
 
+        effective_fmt = t.ffmpeg_fmt
         if self._audiophile_mode == 1:
-            filters.append("aresample=resampler=soxr:precision=33:dither_method=triangular")
+            sink_fmt, sink_rate = get_system_sink_info()
+            effective_fmt = "s16le" if sink_fmt == "s16" else "s32le"
+            filters.append(f"aresample={sink_rate}:resampler=soxr:precision=33:dither_method=triangular")
 
         rg_args = ["-af", ",".join(filters)] if filters else []
 
@@ -680,7 +715,7 @@ class PlayerEngine:
             *seek_args,
             "-i", t.path,
             *rg_args,
-            "-f", t.ffmpeg_fmt, "pipe:1",
+            "-f", effective_fmt, "pipe:1",
         ]
         try:
             p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=65536)
@@ -693,7 +728,10 @@ class PlayerEngine:
     def _spawn_gstreamer_proc(self, t: TrackInfo, seek_pos: float) -> Optional[subprocess.Popen]:
         if not shutil.which("gst-launch-1.0"):
             return None
-        gst_fmt = _GST_FMT_MAP.get(t.pwcat_fmt.lower(), "S16LE")
+        sink_fmt, sink_rate = get_system_sink_info()
+        effective_fmt = sink_fmt if self._audiophile_mode == 1 else t.pwcat_fmt
+        effective_rate = sink_rate if self._audiophile_mode == 1 else t.sample_rate
+        gst_fmt = _GST_FMT_MAP.get(effective_fmt.lower(), "S16LE")
 
         rg_filter = ""
         if self._replay_gain in (1, 2):
@@ -706,7 +744,7 @@ class PlayerEngine:
             rg_filter += f"! audioconvert ! volume volume={vol:.6f} "
 
         if self._audiophile_mode == 1:
-            rg_filter += "! audioresample quality=10 ! audioconvert dithering=tpdf "
+            rg_filter += f"! audioresample quality=10 ! capsfilter caps=audio/x-raw,rate={effective_rate} ! audioconvert dithering=tpdf "
 
         py_code = f'''
 import sys, gi
@@ -749,7 +787,10 @@ except Exception:
     def _launch_pipeline(self) -> bool:
         assert self._track is not None
         t = self._track
-        target_fmt = (t.pwcat_fmt, t.sample_rate, t.channels)
+        sink_fmt, sink_rate = get_system_sink_info()
+        effective_fmt = sink_fmt if self._audiophile_mode == 1 else t.pwcat_fmt
+        effective_rate = sink_rate if self._audiophile_mode == 1 else t.sample_rate
+        target_fmt = (effective_fmt, effective_rate, t.channels)
 
         can_reuse = (
             self._pwcat is not None
@@ -766,8 +807,8 @@ except Exception:
             self._play_start_pos = self._seek_position
             self._play_start_time = time.monotonic()
             if self._seek_position == 0.0 and not can_reuse:
-                bytes_per_sec = t.sample_rate * t.channels * t.bytes_per_sample
-                frame_size = t.channels * t.bytes_per_sample
+                bytes_per_sec = effective_rate * t.channels * (2 if effective_fmt == "s16" else 4)
+                frame_size = t.channels * (2 if effective_fmt == "s16" else 4)
                 raw_silence = int(bytes_per_sec * PIPELINE_SILENCE_LEAD_IN)
                 self._silence_bytes = (raw_silence // frame_size) * frame_size
             else:
@@ -804,8 +845,8 @@ except Exception:
 
             pwcat_cmd = [
                 "pw-cat", "--playback", "--raw",
-                "--format", t.pwcat_fmt,
-                "--rate", str(t.sample_rate),
+                "--format", effective_fmt,
+                "--rate", str(effective_rate),
                 "--channels", str(t.channels),
                 "--media-type", "Audio",
                 "--media-category", "Playback",
