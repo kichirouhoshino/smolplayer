@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: smolplayer\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-11 13:50+0800\n"
+"POT-Creation-Date: 2026-08-16 13:34+0800\n"
 "PO-Revision-Date: 2026-08-11 13:52+0800\n"
 "Last-Translator: smolplayer contributors\n"
 "Language-Team: Arabic\n"
@@ -11,56 +11,100 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: main.py:48
+#, python-brace-format
 msgid "Closed after being paused for {mins} minutes to save system resources."
 msgstr "تم الإغلاق بعد إيقافه مؤقتًا لمدة {mins} دقائق لتوفير موارد النظام."
 
+#: main.py:163 main.py:168
+#, python-brace-format
 msgid "{app_name} File Error"
 msgstr "خطأ في ملف {app_name}"
 
+#: main.py:163
+#, python-brace-format
 msgid "File or folder does not exist: {name}"
 msgstr "الملف أو المجلد غير موجود: {name}"
 
+#: main.py:168
+#, python-brace-format
 msgid "Unable to find playable audio files for: {name}"
 msgstr "تعذر العثور على ملفات صوتية قابلة للتشغيل لـ: {name}"
 
+#: main.py:186
 msgid "Playback stopped: files or drive are no longer accessible."
 msgstr "توقف التشغيل: لم يعد من الممكن الوصول إلى الملفات أو المحرك."
 
-msgid "{app_name} runs in the background! Open an audio file in your file manager to start music playback and control it using your desktop media widget."
-msgstr "يعمل {app_name} في الخلفية! افتح ملف صوتي في مدير الملفات لبدء التشغيل."
+#: main.py:204
+#, python-brace-format
+msgid ""
+"{app_name} runs in the background! Open an audio file in your file manager "
+"to start music playback and control it using your desktop media widget."
+msgstr ""
+"يعمل {app_name} في الخلفية! افتح ملف صوتي في مدير الملفات لبدء التشغيل."
 
-msgid "{app_name} - Stopped"
-msgstr "{app_name} - متوقف"
-
-msgid "Playing"
-msgstr "قيد التشغيل"
-
-msgid "Paused"
-msgstr "متوقف مؤقتا"
-
-msgid "{title}{artist} ({state})"
-msgstr "{title}{artist} ({state})"
-
-msgid "Open Config File"
-msgstr "فتح ملف التكوين"
-
-msgid "Quit {app_name}"
-msgstr "إنهاء {app_name}"
-
+#: player.py:301 player.py:381 player.py:904
+#, python-brace-format
 msgid "{app_name} Error"
 msgstr "خطأ {app_name}"
 
+#: player.py:302
+#, python-brace-format
 msgid "Unable to read audio metadata for {name} with FFmpeg or GStreamer."
 msgstr "تعذر قراءة البيانات الصوتية لـ {name} باستخدام FFmpeg أو GStreamer."
 
-msgid "Audio decoding failed for {name}. Neither FFmpeg nor GStreamer could process format."
+#: player.py:382
+#, python-brace-format
+msgid ""
+"Bit-perfect playback failed for {name}. Falling back to normal playback mode."
+msgstr ""
+
+#: player.py:905
+#, python-brace-format
+msgid ""
+"Audio decoding failed for {name}. Neither FFmpeg nor GStreamer could process "
+"format."
 msgstr "فشل فك تشفير الصوت لـ {name}."
 
+#: player.py:986
+#, python-brace-format
 msgid "Could not start pw-cat: {exc}"
 msgstr "تعذر بدء pw-cat: {exc}"
 
+#: player.py:1068
 msgid "Playback stopped: audio system or decoder failed repeatedly."
 msgstr "توقف التشغيل: فشل نظام الصوت أو فك التشفير مرارًا وتكرارًا."
 
-msgid "{app_name} is already running in the background! Open an audio file in your file manager to start playback."
+#: mpris.py:394
+#, python-brace-format
+msgid ""
+"{app_name} is already running in the background! Open an audio file in your "
+"file manager to start playback."
 msgstr "{app_name} يعمل بالفعل في الخلفية! افتح ملف صوتي لبدء التشغيل."
+
+#: tray.py:104
+#, python-brace-format
+msgid "{app_name} - Stopped"
+msgstr "{app_name} - متوقف"
+
+#: tray.py:105
+msgid "Playing"
+msgstr "قيد التشغيل"
+
+#: tray.py:105
+msgid "Paused"
+msgstr "متوقف مؤقتا"
+
+#: tray.py:108
+#, python-brace-format
+msgid "{title}{artist} ({state})"
+msgstr "{title}{artist} ({state})"
+
+#: tray.py:191
+msgid "Open Config File"
+msgstr "فتح ملف التكوين"
+
+#: tray.py:192
+#, python-brace-format
+msgid "Quit {app_name}"
+msgstr "إنهاء {app_name}"

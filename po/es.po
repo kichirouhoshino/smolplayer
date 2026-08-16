@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: smolplayer\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-11 13:50+0800\n"
+"POT-Creation-Date: 2026-08-16 13:34+0800\n"
 "PO-Revision-Date: 2026-08-11 13:50+0800\n"
 "Last-Translator: smolplayer contributors\n"
 "Language-Team: Spanish\n"
@@ -11,56 +11,111 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: main.py:48
+#, python-brace-format
 msgid "Closed after being paused for {mins} minutes to save system resources."
-msgstr "Cerrado tras estar pausado durante {mins} minutos para ahorrar recursos del sistema."
+msgstr ""
+"Cerrado tras estar pausado durante {mins} minutos para ahorrar recursos del "
+"sistema."
 
+#: main.py:163 main.py:168
+#, python-brace-format
 msgid "{app_name} File Error"
 msgstr "Error de archivo de {app_name}"
 
+#: main.py:163
+#, python-brace-format
 msgid "File or folder does not exist: {name}"
 msgstr "El archivo o carpeta no existe: {name}"
 
+#: main.py:168
+#, python-brace-format
 msgid "Unable to find playable audio files for: {name}"
 msgstr "No se pudieron encontrar archivos de audio reproducibles para: {name}"
 
+#: main.py:186
 msgid "Playback stopped: files or drive are no longer accessible."
 msgstr "Reproducción detenida: los archivos o la unidad ya no son accesibles."
 
-msgid "{app_name} runs in the background! Open an audio file in your file manager to start music playback and control it using your desktop media widget."
-msgstr "¡{app_name} se ejecuta en segundo plano! Abre un archivo de audio en tu administrador de archivos para comenzar la reproducción."
+#: main.py:204
+#, python-brace-format
+msgid ""
+"{app_name} runs in the background! Open an audio file in your file manager "
+"to start music playback and control it using your desktop media widget."
+msgstr ""
+"¡{app_name} se ejecuta en segundo plano! Abre un archivo de audio en tu "
+"administrador de archivos para comenzar la reproducción."
 
-msgid "{app_name} - Stopped"
-msgstr "{app_name} - Detenido"
-
-msgid "Playing"
-msgstr "Reproduciendo"
-
-msgid "Paused"
-msgstr "En pausa"
-
-msgid "{title}{artist} ({state})"
-msgstr "{title}{artist} ({state})"
-
-msgid "Open Config File"
-msgstr "Abrir archivo de configuración"
-
-msgid "Quit {app_name}"
-msgstr "Salir de {app_name}"
-
+#: player.py:301 player.py:381 player.py:904
+#, python-brace-format
 msgid "{app_name} Error"
 msgstr "Error de {app_name}"
 
+#: player.py:302
+#, python-brace-format
 msgid "Unable to read audio metadata for {name} with FFmpeg or GStreamer."
-msgstr "No se pudieron leer los metadatos de audio para {name} con FFmpeg o GStreamer."
+msgstr ""
+"No se pudieron leer los metadatos de audio para {name} con FFmpeg o "
+"GStreamer."
 
-msgid "Audio decoding failed for {name}. Neither FFmpeg nor GStreamer could process format."
-msgstr "Falló la decodificación de audio para {name}. Ni FFmpeg ni GStreamer pudieron procesar el formato."
+#: player.py:382
+#, python-brace-format
+msgid ""
+"Bit-perfect playback failed for {name}. Falling back to normal playback mode."
+msgstr ""
 
+#: player.py:905
+#, python-brace-format
+msgid ""
+"Audio decoding failed for {name}. Neither FFmpeg nor GStreamer could process "
+"format."
+msgstr ""
+"Falló la decodificación de audio para {name}. Ni FFmpeg ni GStreamer "
+"pudieron procesar el formato."
+
+#: player.py:986
+#, python-brace-format
 msgid "Could not start pw-cat: {exc}"
 msgstr "No se pudo iniciar pw-cat: {exc}"
 
+#: player.py:1068
 msgid "Playback stopped: audio system or decoder failed repeatedly."
-msgstr "Reproducción detenida: el sistema de audio o el decodificador fallaron repetidamente."
+msgstr ""
+"Reproducción detenida: el sistema de audio o el decodificador fallaron "
+"repetidamente."
 
-msgid "{app_name} is already running in the background! Open an audio file in your file manager to start playback."
-msgstr "¡{app_name} ya se está ejecutando en segundo plano! Abre un archivo de audio en tu administrador de archivos para reproducir."
+#: mpris.py:394
+#, python-brace-format
+msgid ""
+"{app_name} is already running in the background! Open an audio file in your "
+"file manager to start playback."
+msgstr ""
+"¡{app_name} ya se está ejecutando en segundo plano! Abre un archivo de audio "
+"en tu administrador de archivos para reproducir."
+
+#: tray.py:104
+#, python-brace-format
+msgid "{app_name} - Stopped"
+msgstr "{app_name} - Detenido"
+
+#: tray.py:105
+msgid "Playing"
+msgstr "Reproduciendo"
+
+#: tray.py:105
+msgid "Paused"
+msgstr "En pausa"
+
+#: tray.py:108
+#, python-brace-format
+msgid "{title}{artist} ({state})"
+msgstr "{title}{artist} ({state})"
+
+#: tray.py:191
+msgid "Open Config File"
+msgstr "Abrir archivo de configuración"
+
+#: tray.py:192
+#, python-brace-format
+msgid "Quit {app_name}"
+msgstr "Salir de {app_name}"

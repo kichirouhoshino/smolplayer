@@ -55,4 +55,12 @@
     <mediatype>audio/x-tta</mediatype>
     <mediatype>audio/x-wavpack</mediatype>
   </provides>
+
+  <releases>
+    <release version="0.1.0" date="2026-08-16">
+      <description>
+        <p>Initial release of smolplayer.</p>
+      </description>
+    </release>
+  </releases>
 </component>

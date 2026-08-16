@@ -52,6 +52,13 @@ def sort_audio_files(audio_files: List[str], sort_method: int, folder: Optional[
     return audio_files
 
 
+def _is_valid_audio_file(filename: str) -> bool:
+    """Check if filename is not hidden and has a supported audio extension."""
+    if filename.startswith('.'):
+        return False
+    return os.path.splitext(filename)[1].lower() in AUDIO_EXTS
+
+
 def scan_audio_files_single_folder(folder: str, sort_method: int = 0) -> List[str]:
     """
     Non-recursive scan of a single folder for supported audio files.
@@ -60,10 +67,8 @@ def scan_audio_files_single_folder(folder: str, sort_method: int = 0) -> List[st
     audio_files: List[str] = []
     try:
         for entry in os.scandir(folder):
-            if entry.is_file() and not entry.name.startswith('.'):
-                ext = os.path.splitext(entry.name)[1].lower()
-                if ext in AUDIO_EXTS:
-                    audio_files.append(entry.path)
+            if entry.is_file() and _is_valid_audio_file(entry.name):
+                audio_files.append(entry.path)
     except OSError:
         pass
 
@@ -80,10 +85,7 @@ def scan_audio_files_recursive(folder: str, sort_method: int = 0) -> List[str]:
         for root_dir, dirs, files in os.walk(folder, followlinks=True):
             dirs[:] = [d for d in dirs if not d.startswith('.')]
             for f in files:
-                if f.startswith('.'):
-                    continue
-                ext = os.path.splitext(f)[1].lower()
-                if ext in AUDIO_EXTS:
+                if _is_valid_audio_file(f):
                     audio_files.append(os.path.join(root_dir, f))
     except OSError:
         pass

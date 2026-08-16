@@ -19,7 +19,7 @@ from utils import normalize_file_path, send_error_notification, send_notificatio
 from tray import TrayService
 
 from config import get_config, open_config_file
-from constants import APP_NAME
+from constants import APP_NAME, APP_VERSION
 from i18n import _
 
 
@@ -89,6 +89,10 @@ def main() -> None:
     args = sys.argv[1:]
     cfg = get_config()
 
+    if "--version" in args or "-v" in args:
+        print(f"{APP_NAME} {APP_VERSION}")
+        sys.exit(0)
+
     if "--config" in args or "-c" in args:
         open_config_file()
         sys.exit(0)
@@ -106,7 +110,8 @@ def main() -> None:
     engine.replay_gain = cfg.replay_gain
     engine.replaygain_preamp = cfg.replaygain_preamp
     engine.replaygain_default_preamp = cfg.replaygain_default_preamp
-    engine.audiophile_mode = cfg.audiophile_mode
+    engine.internal_resampler = cfg.internal_resampler
+    engine.bit_perfect = cfg.bit_perfect
     playlist = PlaylistManager()
     power_inhibitor = PowerInhibitor()
     loop = MainLoop()
@@ -137,6 +142,25 @@ def main() -> None:
     engine.on_state_change = handle_state_change
     engine.on_volume_change = handle_volume_change
 
+    def play_track(track_path: Optional[str]) -> bool:
+        if not track_path or not os.path.isfile(track_path):
+            return False
+        info = engine.load(track_path)
+        engine.play()
+        if mpris:
+            mpris.notify_track(info, playlist.current_index)
+        if tray:
+            tray.notify_track(info)
+
+        def _on_cover_done(url):
+            if mpris:
+                mpris.notify_track(engine.track, playlist.current_index)
+            if tray:
+                tray.notify_track(engine.track)
+
+        engine.fetch_cover_async(callback=_on_cover_done)
+        return True
+
     def handle_open_uri(uri: str) -> None:
         path = normalize_file_path(uri)
         if not os.path.exists(path):
@@ -144,20 +168,7 @@ def main() -> None:
             return
 
         current = playlist.load_file_or_folder(path)
-        if current and os.path.isfile(current):
-            info = engine.load(current)
-            engine.play()
-            if mpris:
-                mpris.notify_track(info, playlist.current_index)
-            if tray:
-                tray.notify_track(info)
-            def _on_cover_done(url):
-                if mpris:
-                    mpris.notify_track(engine.track, playlist.current_index)
-                if tray:
-                    tray.notify_track(engine.track)
-            engine.fetch_cover_async(callback=_on_cover_done)
-        else:
+        if not play_track(current):
             send_error_notification(_("{app_name} File Error").format(app_name=APP_NAME), _("Unable to find playable audio files for: {name}").format(name=os.path.basename(path)))
 
     def handle_track_end() -> None:
@@ -169,19 +180,7 @@ def main() -> None:
             if not next_track:
                 break
             attempts += 1
-            if os.path.isfile(next_track):
-                info = engine.load(next_track)
-                engine.play()
-                if mpris:
-                    mpris.notify_track(info, playlist.current_index)
-                if tray:
-                    tray.notify_track(info)
-                def _on_cover_done(url):
-                    if mpris:
-                        mpris.notify_track(engine.track, playlist.current_index)
-                    if tray:
-                        tray.notify_track(engine.track)
-                engine.fetch_cover_async(callback=_on_cover_done)
+            if play_track(next_track):
                 return
 
         engine.stop()

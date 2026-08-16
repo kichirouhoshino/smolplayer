@@ -12,6 +12,7 @@ and tuneable numeric defaults. No other module should hardcode these values.
 APP_NAME        = "smolplayer"
 APP_ID          = "io.github.roddy.SmolPlayer"
 APP_DISPLAY     = "smolplayer"   # Human-readable name shown in UIs
+APP_VERSION     = "0.1.0"
 
 # ---------------------------------------------------------------------------
 # D-Bus / MPRIS names

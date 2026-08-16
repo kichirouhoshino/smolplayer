@@ -16,90 +16,11 @@ _CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser(
 _CONFIG_FILE = os.path.join(_CONFIG_DIR, "config.ini")
 _STATE_FILE = os.path.join(_CONFIG_DIR, "state.json")
 
-DEFAULT_CONFIG_TEXT = """# smolplayer configuration file
+DEFAULT_CONFIG_HEADER = """# smolplayer configuration file
 # Location: ~/.config/smolplayer/config.ini
 
 [smolplayer]
-
-# Enable ReplayGain
-# 0 - Off
-# 1 - Use Track Gain
-# 2 - Use Album Gain
-# Default is 0
-replay_gain = 0
-
-# Pre-amp gain for songs with ReplayGain info (in dB)
-# Default is 0
-replaygain_preamp = 0
-
-# Pre-amp gain for songs without ReplayGain info (in dB)
-# Default is 0
-replaygain_default_preamp = 0
-
-# Shuffle Algorithm
-# 0 - Fisher-Yates (Modern Knuth Shuffle - Industry Standard, Fair Uniform Random)
-# 1 - Smart Shuffle (Artist-spaced, prevents same artist/album back-to-back)
-# 2 - True Random (Pure random selection with replacement)
-# Default is 0
-shuffle_algo = 0
-
-# Sorting Method when shuffle is off
-# 0 - By filename
-# 1 - By title
-# 2 - By disc and track number
-# 3 - By artist & title
-# Default is 0
-sort_method = 0
-
-# Set whether to play songs recursively on File Open Action
-# 0 - False (single parent folder only)
-# 1 - True (recursive subfolders)
-# Default is 0
-recurse_fileopen = 0
-
-# Set whether to play songs recursively on "Open folder with" action
-# 0 - False (top-level folder only)
-# 1 - True (recursive subfolders)
-# Default is 1
-recurse_folderopen = 1
-
-# Timeout: When smolplayer will close itself when music has not been
-# playing for a certain period of time
-# Set by minutes (0 = disabled)
-# Default is 30
-timeout = 30
-
-# Set how much presence smolplayer has in certain areas.
-# 0 - Tray and Notifications enabled
-# 1 - Tray only
-# 2 - Notifications only
-# 3 - All off
-# Default is 0
-presence = 0
-
-# Set whether to remember Shuffle and Repeat across app opens
-# 0 - False (default)
-# 1 - True
-# Default is 0
-remember_toggles = 0
-
-# Set what to use as the audio decoding method
-# 0 - ffmpeg (recommended)
-# 1 - gstreamer
-# If a format is not available on one method, it will fallback to the other
-# Defaults to 0
-decode_method = 0
-
-# Audiophile Mode
-# Uses FFmpeg's highest quality internal resampler (soxr with triangular dither and max precision)
-# when formats don't match what's required by the output device.
-# NOTE: Highly discouraged, as this adds significantly more CPU usage and PipeWire already does this task well!
-# 0 - Disabled (recommended: zero processing, PipeWire handles resampling efficiently)
-# 1 - Enabled (uses FFmpeg/GStreamer highest quality soxr/tpdf resampler + dither; higher CPU usage)
-# Default is 0
-audiophile_mode = 0
 """
-
 
 _OPTION_BLOCKS: dict[str, str] = {
     "replay_gain": (
@@ -110,21 +31,11 @@ _OPTION_BLOCKS: dict[str, str] = {
         "# Default is 0\n"
         "replay_gain = 0\n"
     ),
-    "replaygain_preamp": (
-        "\n# Pre-amp gain for songs with ReplayGain info (in dB)\n"
-        "# Default is 0\n"
-        "replaygain_preamp = 0\n"
-    ),
-    "replaygain_default_preamp": (
-        "\n# Pre-amp gain for songs without ReplayGain info (in dB)\n"
-        "# Default is 0\n"
-        "replaygain_default_preamp = 0\n"
-    ),
     "shuffle_algo": (
         "\n# Shuffle Algorithm\n"
-        "# 0 - Fisher-Yates (Modern Knuth Shuffle - Industry Standard, Fair Uniform Random)\n"
-        "# 1 - Smart Shuffle (Artist-spaced, prevents same artist/album back-to-back)\n"
-        "# 2 - True Random (Pure random selection with replacement)\n"
+        "# 0 - Fisher-Yates\n"
+        "# 1 - Smart Shuffle (Artist-spaced)\n"
+        "# 2 - True Random\n"
         "# Default is 0\n"
         "shuffle_algo = 0\n"
     ),
@@ -178,28 +89,46 @@ _OPTION_BLOCKS: dict[str, str] = {
         "\n# Set what to use as the audio decoding method\n"
         "# 0 - ffmpeg (recommended)\n"
         "# 1 - gstreamer\n"
-        "# If a format is not available on one method, it will fallback to the other\n"
+        "# If a format is not available on one method, it will fallback to the\n"
+        "# other.\n"
         "# Defaults to 0\n"
         "decode_method = 0\n"
     ),
-    "audiophile_mode": (
-        "\n# Audiophile Mode\n"
-        "# Uses FFmpeg's highest quality internal resampler (soxr with triangular dither and max precision)\n"
-        "# when formats don't match what's required by the output device.\n"
-        "# NOTE: Highly discouraged, as this adds significantly more CPU usage and PipeWire already does this task well!\n"
-        "# 0 - Disabled (recommended: zero processing, PipeWire handles resampling efficiently)\n"
-        "# 1 - Enabled (uses FFmpeg/GStreamer highest quality soxr/tpdf resampler + dither; higher CPU usage)\n"
+    "replaygain_preamp": (
+        "\n# Pre-amp gain for songs with ReplayGain info (in dB)\n"
         "# Default is 0\n"
-        "audiophile_mode = 0\n"
+        "replaygain_preamp = 0\n"
+    ),
+    "replaygain_default_preamp": (
+        "\n# Pre-amp gain for songs without ReplayGain info (in dB)\n"
+        "# Default is 0\n"
+        "replaygain_default_preamp = 0\n"
+    ),
+    "internal_resampler": (
+        "\n# Set whether to use ffmpeg/gstreamer for resampling when format does not\n"
+        "# match the output device. It is highly recommended to keep this DISABLED,\n"
+        "# as PipeWire already does this efficiently\n"
+        "# 0 - Disabled\n"
+        "# 1 - Enabled\n"
+        "# Default is 0\n"
+        "internal_resampler = 0\n"
+    ),
+    "bit_perfect": (
+        "\n# Enable Bit-Perfect Playback\n"
+        "# When this fails, playback will fallback to normal mode until the next track.\n"
+        "# Only enable this if you are sure that your DAC supports the audio formats\n"
+        "# you own!\n"
+        "# Default is 0\n"
+        "bit_perfect = 0\n"
     ),
 }
+
+DEFAULT_CONFIG_TEXT = DEFAULT_CONFIG_HEADER + "".join(_OPTION_BLOCKS.values())
 
 
 @dataclass
 class Config:
     replay_gain: int = 0
-    replaygain_preamp: float = 0.0
-    replaygain_default_preamp: float = 0.0
     shuffle_algo: int = 0
     sort_method: int = 0
     recurse_fileopen: int = 0
@@ -208,7 +137,14 @@ class Config:
     presence: int = 0
     remember_toggles: int = 0
     decode_method: int = 0
-    audiophile_mode: int = 0
+    replaygain_preamp: float = 0.0
+    replaygain_default_preamp: float = 0.0
+    internal_resampler: int = 0
+    bit_perfect: int = 0
+
+    @property
+    def audiophile_mode(self) -> int:
+        return self.internal_resampler
 
     @property
     def tray_enabled(self) -> bool:
@@ -259,7 +195,12 @@ def get_config() -> Config:
             cfg.presence = sec.getint("presence", 0)
             cfg.remember_toggles = sec.getint("remember_toggles", 0)
             cfg.decode_method = sec.getint("decode_method", 0)
-            cfg.audiophile_mode = sec.getint("audiophile_mode", 0)
+            # Support internal_resampler with fallback to legacy audiophile_mode key
+            if "internal_resampler" in sec:
+                cfg.internal_resampler = sec.getint("internal_resampler", 0)
+            else:
+                cfg.internal_resampler = sec.getint("audiophile_mode", 0)
+            cfg.bit_perfect = sec.getint("bit_perfect", 0)
     except Exception:
         pass
 

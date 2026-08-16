@@ -102,8 +102,8 @@ def extract_cover(path: str) -> Optional[bytes]:
         return None
 
 
-def get_system_sink_info() -> tuple[str, int]:
-    """Query current active default PipeWire sink sample format ('s16' or 's32') and sample rate."""
+def _get_pactl_output() -> tuple[Optional[str], Optional[str]]:
+    """Helper to query pactl info for default sink name and list sinks output."""
     try:
         default_sink = None
         res_info = subprocess.run(["pactl", "info"], capture_output=True, text=True, timeout=2)
@@ -114,25 +114,53 @@ def get_system_sink_info() -> tuple[str, int]:
                     break
 
         res_sinks = subprocess.run(["pactl", "list", "sinks"], capture_output=True, text=True, timeout=2)
-        if res_sinks.returncode == 0:
-            current_name = None
-            for line in res_sinks.stdout.splitlines():
-                s = line.strip()
-                if s.startswith("Name:"):
-                    current_name = s.split("Name:")[1].strip()
-                elif "Sample Specification:" in s:
-                    m = re.search(r"(\w+)\s+\d+ch\s+(\d+)Hz", s)
-                    if m:
-                        fmt_str = m.group(1).lower()
-                        rate = int(m.group(2))
-                        pw_fmt = "s16" if "s16" in fmt_str else "s32"
-                        if default_sink and current_name == default_sink:
-                            return pw_fmt, rate
-                        elif not default_sink:
-                            return pw_fmt, rate
+        sinks_txt = res_sinks.stdout if res_sinks.returncode == 0 else None
+        return default_sink, sinks_txt
     except Exception:
-        pass
+        return None, None
+
+
+def get_system_sink_info() -> tuple[str, int]:
+    """Query current active default PipeWire sink sample format ('s16' or 's32') and sample rate."""
+    default_sink, sinks_txt = _get_pactl_output()
+    if sinks_txt:
+        current_name = None
+        for line in sinks_txt.splitlines():
+            s = line.strip()
+            if s.startswith("Name:"):
+                current_name = s.split("Name:")[1].strip()
+            elif "Sample Specification:" in s:
+                m = re.search(r"(\w+)\s+\d+ch\s+(\d+)Hz", s)
+                if m:
+                    fmt_str = m.group(1).lower()
+                    rate = int(m.group(2))
+                    pw_fmt = "s16" if "s16" in fmt_str else "s32"
+                    if default_sink and current_name == default_sink:
+                        return pw_fmt, rate
+                    elif not default_sink:
+                        return pw_fmt, rate
     return "s16", 48000
+
+
+def get_alsa_hw_device() -> str:
+    """Detect active default ALSA hardware device (e.g. 'hw:1,0' or 'hw:CARD,DEV') or fallback."""
+    default_sink, sinks_txt = _get_pactl_output()
+    if sinks_txt:
+        current_card = None
+        current_dev = "0"
+        is_default = False
+        for line in sinks_txt.splitlines():
+            s = line.strip()
+            if s.startswith("Name:"):
+                name = s.split("Name:")[1].strip()
+                is_default = (default_sink and name == default_sink)
+            elif "alsa.card =" in s:
+                current_card = s.split("alsa.card =")[1].strip().strip('"')
+            elif "alsa.device =" in s:
+                current_dev = s.split("alsa.device =")[1].strip().strip('"')
+                if is_default and current_card is not None:
+                    return f"hw:{current_card},{current_dev}"
+    return "hw:0,0"
 
 
 import shutil
@@ -150,6 +178,16 @@ _GST_FMT_MAP: dict[str, str] = {
     "f64": "F64LE",
     "f64le": "F64LE",
     "u8": "U8",
+}
+
+_APLAY_FMT_MAP: dict[str, str] = {
+    "s16": "S16_LE",
+    "s16le": "S16_LE",
+    "s24": "S32_LE",
+    "s24le": "S32_LE",
+    "s32": "S32_LE",
+    "s32le": "S32_LE",
+    "f32": "FLOAT_LE",
 }
 
 
@@ -338,6 +376,13 @@ def _probe_metadata(path: str) -> Optional[dict]:
     }
 
 
+def _send_bit_perfect_failure_notification(track_name: str) -> None:
+    send_error_notification(
+        _("{app_name} Error").format(app_name=APP_NAME),
+        _("Bit-perfect playback failed for {name}. Falling back to normal playback mode.").format(name=track_name)
+    )
+
+
 class PlayerEngine:
     """Audio playback engine: ffmpeg → pump thread → pw-cat."""
 
@@ -365,7 +410,8 @@ class PlayerEngine:
         self._replay_gain: int = 0
         self._replaygain_preamp: float = 0.0
         self._replaygain_default_preamp: float = 0.0
-        self._audiophile_mode: int = 0
+        self._internal_resampler: int = 0
+        self._bit_perfect: int = 0
 
         # Callbacks
         self.on_state_change:    Optional[Callable[[str], None]] = None
@@ -415,12 +461,28 @@ class PlayerEngine:
         self._replaygain_default_preamp = float(value)
 
     @property
+    def internal_resampler(self) -> int:
+        return self._internal_resampler
+
+    @internal_resampler.setter
+    def internal_resampler(self, mode: int) -> None:
+        self._internal_resampler = int(mode)
+
+    @property
     def audiophile_mode(self) -> int:
-        return self._audiophile_mode
+        return self._internal_resampler
 
     @audiophile_mode.setter
     def audiophile_mode(self, mode: int) -> None:
-        self._audiophile_mode = int(mode)
+        self._internal_resampler = int(mode)
+
+    @property
+    def bit_perfect(self) -> int:
+        return self._bit_perfect
+
+    @bit_perfect.setter
+    def bit_perfect(self, mode: int) -> None:
+        self._bit_perfect = int(mode)
 
     @property
     def position(self) -> float:
@@ -687,21 +749,25 @@ class PlayerEngine:
             time.sleep(0.1)
         return None
 
+    def _calc_replaygain_db(self, t: TrackInfo) -> Optional[float]:
+        if self._replay_gain not in (1, 2):
+            return None
+        raw_gain = t.track_gain_db if self._replay_gain == 1 else t.album_gain_db
+        if raw_gain is not None:
+            return raw_gain + self._replaygain_preamp
+        return self._replaygain_default_preamp
+
     def _spawn_ffmpeg_proc(self, t: TrackInfo, seek_pos: float) -> Optional[subprocess.Popen]:
         if not shutil.which("ffmpeg"):
             return None
         seek_args = ["-accurate_seek", "-ss", f"{seek_pos:.6f}"] if seek_pos > 0.0 else []
         filters = []
-        if self._replay_gain in (1, 2):
-            raw_gain = t.track_gain_db if self._replay_gain == 1 else t.album_gain_db
-            if raw_gain is not None:
-                final_gain_db = raw_gain + self._replaygain_preamp
-            else:
-                final_gain_db = self._replaygain_default_preamp
-            filters.append(f"volume={final_gain_db:.2f}dB")
+        rg_db = self._calc_replaygain_db(t)
+        if rg_db is not None:
+            filters.append(f"volume={rg_db:.2f}dB")
 
         effective_fmt = t.ffmpeg_fmt
-        if self._audiophile_mode == 1:
+        if self._internal_resampler == 1:
             sink_fmt, sink_rate = get_system_sink_info()
             effective_fmt = "s16le" if sink_fmt == "s16" else "s32le"
             filters.append(f"aresample={sink_rate}:resampler=soxr:precision=33:dither_method=triangular")
@@ -729,21 +795,17 @@ class PlayerEngine:
         if not shutil.which("gst-launch-1.0"):
             return None
         sink_fmt, sink_rate = get_system_sink_info()
-        effective_fmt = sink_fmt if self._audiophile_mode == 1 else t.pwcat_fmt
-        effective_rate = sink_rate if self._audiophile_mode == 1 else t.sample_rate
+        effective_fmt = sink_fmt if self._internal_resampler == 1 else t.pwcat_fmt
+        effective_rate = sink_rate if self._internal_resampler == 1 else t.sample_rate
         gst_fmt = _GST_FMT_MAP.get(effective_fmt.lower(), "S16LE")
 
         rg_filter = ""
-        if self._replay_gain in (1, 2):
-            raw_gain = t.track_gain_db if self._replay_gain == 1 else t.album_gain_db
-            if raw_gain is not None:
-                final_gain_db = raw_gain + self._replaygain_preamp
-            else:
-                final_gain_db = self._replaygain_default_preamp
-            vol = 10.0 ** (final_gain_db / 20.0)
+        rg_db = self._calc_replaygain_db(t)
+        if rg_db is not None:
+            vol = 10.0 ** (rg_db / 20.0)
             rg_filter += f"! audioconvert ! volume volume={vol:.6f} "
 
-        if self._audiophile_mode == 1:
+        if self._internal_resampler == 1:
             rg_filter += f"! audioresample quality=10 ! capsfilter caps=audio/x-raw,rate={effective_rate} ! audioconvert dithering=tpdf "
 
         py_code = f'''
@@ -784,13 +846,22 @@ except Exception:
         except Exception:
             return None
 
-    def _launch_pipeline(self) -> bool:
+    def _launch_pipeline(self, force_normal_mode: bool = False) -> bool:
         assert self._track is not None
         t = self._track
-        sink_fmt, sink_rate = get_system_sink_info()
-        effective_fmt = sink_fmt if self._audiophile_mode == 1 else t.pwcat_fmt
-        effective_rate = sink_rate if self._audiophile_mode == 1 else t.sample_rate
-        target_fmt = (effective_fmt, effective_rate, t.channels)
+        use_direct_alsa = (self._bit_perfect == 1 and not force_normal_mode)
+
+        if use_direct_alsa:
+            alsa_dev = get_alsa_hw_device()
+            aplay_fmt = _APLAY_FMT_MAP.get(t.pwcat_fmt.lower(), "S16_LE")
+            target_fmt = ("alsa", alsa_dev, aplay_fmt, t.sample_rate, t.channels)
+            effective_fmt = t.pwcat_fmt
+            effective_rate = t.sample_rate
+        else:
+            sink_fmt, sink_rate = get_system_sink_info()
+            effective_fmt = sink_fmt if self._internal_resampler == 1 else t.pwcat_fmt
+            effective_rate = sink_rate if self._internal_resampler == 1 else t.sample_rate
+            target_fmt = (effective_fmt, effective_rate, t.channels)
 
         can_reuse = (
             self._pwcat is not None
@@ -838,41 +909,82 @@ except Exception:
 
         self._ffmpeg = proc
 
-        # If pwcat cannot be reused due to native format change, detach old stream cleanly and start new native pwcat
+        # If audio process cannot be reused, detach old stream cleanly and start new direct ALSA aplay or pw-cat
         if not can_reuse:
             if self._pwcat is not None:
                 self._stop_pipeline(keep_pwcat=False)
 
-            pwcat_cmd = [
-                "pw-cat", "--playback", "--raw",
-                "--format", effective_fmt,
-                "--rate", str(effective_rate),
-                "--channels", str(t.channels),
-                "--media-type", "Audio",
-                "--media-category", "Playback",
-                "--media-role", "Music",
-                "-P", f"node.name={PWCAT_NODE_NAME}",
-                "-P", f"node.description={PWCAT_NODE_DESCRIPTION}",
-                "-P", f"media.name={PWCAT_NODE_NAME}",
-                "-P", f"app.name={PWCAT_NODE_NAME}",
-                "--latency", PWCAT_LATENCY,
-                "-",
-            ]
+            if use_direct_alsa:
+                if not shutil.which("aplay"):
+                    if self._ffmpeg:
+                        self._ffmpeg.kill()
+                        self._ffmpeg = None
+                    _send_bit_perfect_failure_notification(os.path.basename(t.path))
+                    return self._launch_pipeline(force_normal_mode=True)
 
-            try:
-                self._pwcat = subprocess.Popen(
-                    pwcat_cmd, stdin=subprocess.PIPE,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, bufsize=65536,
-                )
-                self._pwcat_fmt = target_fmt
-            except Exception as exc:
-                send_error_notification(APP_NAME, _("Could not start pw-cat: {exc}").format(exc=exc))
-                if self._ffmpeg:
-                    self._ffmpeg.kill()
-                    self._ffmpeg = None
-                self._pwcat = None
-                self._pwcat_fmt = None
-                return False
+                alsa_cmd = [
+                    "aplay", "-q",
+                    "--disable-resample",
+                    "--disable-format",
+                    "--disable-softvol",
+                    "-t", "raw",
+                    "-f", aplay_fmt,
+                    "-r", str(t.sample_rate),
+                    "-c", str(t.channels),
+                    "-D", alsa_dev,
+                    "-",
+                ]
+                try:
+                    self._pwcat = subprocess.Popen(
+                        alsa_cmd, stdin=subprocess.PIPE,
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, bufsize=65536,
+                    )
+                    self._pwcat_fmt = target_fmt
+                    time.sleep(0.05)
+                    if self._pwcat.poll() is not None and self._pwcat.returncode != 0:
+                        raise RuntimeError("aplay exited with return code " + str(self._pwcat.returncode))
+                except Exception:
+                    if self._ffmpeg:
+                        self._ffmpeg.kill()
+                        self._ffmpeg = None
+                    self._pwcat = None
+                    self._pwcat_fmt = None
+                    _send_bit_perfect_failure_notification(os.path.basename(t.path))
+                    return self._launch_pipeline(force_normal_mode=True)
+            else:
+                pwcat_cmd = [
+                    "pw-cat", "--playback", "--raw",
+                    "--format", effective_fmt,
+                    "--rate", str(effective_rate),
+                    "--channels", str(t.channels),
+                    "--media-type", "Audio",
+                    "--media-category", "Playback",
+                    "--media-role", "Music",
+                    "-P", f"node.name={PWCAT_NODE_NAME}",
+                    "-P", f"node.description={PWCAT_NODE_DESCRIPTION}",
+                    "-P", f"media.name={PWCAT_NODE_NAME}",
+                    "-P", f"app.name={PWCAT_NODE_NAME}",
+                    "--latency", PWCAT_LATENCY,
+                    "-",
+                ]
+
+                try:
+                    self._pwcat = subprocess.Popen(
+                        pwcat_cmd, stdin=subprocess.PIPE,
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, bufsize=65536,
+                    )
+                    self._pwcat_fmt = target_fmt
+                    time.sleep(0.05)
+                    if self._pwcat.poll() is not None and self._pwcat.returncode != 0:
+                        raise RuntimeError("pw-cat exited with return code " + str(self._pwcat.returncode))
+                except Exception as exc:
+                    if self._ffmpeg:
+                        self._ffmpeg.kill()
+                        self._ffmpeg = None
+                    self._pwcat = None
+                    self._pwcat_fmt = None
+                    send_error_notification(APP_NAME, _("Could not start pw-cat: {exc}").format(exc=exc))
+                    return False
 
         ffmpeg_proc = self._ffmpeg
         pwcat_proc  = self._pwcat
@@ -928,7 +1040,15 @@ except Exception:
                     if self.on_position_update and not stop_evt.is_set():
                         self.on_position_update(self.position)
         except (BrokenPipeError, OSError, ValueError):
-            pass
+            with self._lock:
+                is_current = (self._pipeline_generation == gen) and not stop_evt.is_set()
+                was_bit_perfect = (self._bit_perfect == 1)
+                track_name = os.path.basename(self._track.path) if self._track else ""
+
+            if is_current and was_bit_perfect and self._bytes_written == 0:
+                _send_bit_perfect_failure_notification(track_name)
+                self._launch_pipeline(force_normal_mode=True)
+                return
         finally:
             if ffmpeg_out:
                 try:

@@ -15,6 +15,7 @@ This is still in development but you can pretty much use it. Just needs a few mo
 - **Uses the folder where the song is located as the playlist**
 - **Uses your system's ffmpeg or gstreamer for decoding**, meaning it can play virtually any audio codec you throw at it
 - **Uses pw-cat to play songs**, meaning PipeWire plays raw audio with zero post-processing
+- **Optional Bit-Perfect Playback** through direct ALSA
 - **ReplayGain Support** (disabled by default)
 - **Config** for setting shuffle algo, sorting order, and others
 

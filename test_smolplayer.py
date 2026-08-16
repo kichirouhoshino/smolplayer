@@ -365,6 +365,52 @@ class TestPlayerEngine(unittest.TestCase):
             self.assertIn("--rate", pwcat_call)
             self.assertEqual(pwcat_call[pwcat_call.index("--rate") + 1], "48000")
 
+    def test_bit_perfect_passthrough_and_fallback(self) -> None:
+        t = TrackInfo(path="/tmp/fake.flac", duration=180.0)
+        self.engine._track = t
+        self.engine.bit_perfect = 1
+
+        def fake_which(bin_name):
+            return f"/usr/bin/{bin_name}"
+
+        with patch("subprocess.Popen") as mock_popen, \
+             patch("shutil.which", side_effect=fake_which), \
+             patch("player.get_alsa_hw_device", return_value="hw:0,0"):
+            mock_popen.return_value.poll.return_value = None
+            self.engine._pwcat = None
+            self.engine._launch_pipeline()
+            aplay_call = None
+            for call_item in mock_popen.call_args_list:
+                args = call_item[0][0]
+                if isinstance(args, list) and len(args) > 0 and args[0] == "aplay":
+                    aplay_call = args
+                    break
+            self.assertIsNotNone(aplay_call)
+            self.assertIn("-D", aplay_call)
+            self.assertEqual(aplay_call[aplay_call.index("-D") + 1], "hw:0,0")
+
+        call_count = 0
+        def fake_popen(cmd, **kwargs):
+            nonlocal call_count
+            mock_proc = MagicMock()
+            if isinstance(cmd, list) and len(cmd) > 0 and cmd[0] == "aplay":
+                call_count += 1
+                mock_proc.poll.return_value = 1
+                mock_proc.returncode = 1
+            else:
+                mock_proc.poll.return_value = None
+                mock_proc.returncode = 0
+            return mock_proc
+
+        with patch("subprocess.Popen", side_effect=fake_popen), \
+             patch("shutil.which", side_effect=fake_which), \
+             patch("player.send_error_notification") as mock_notif:
+            self.engine._pwcat = None
+            res = self.engine._launch_pipeline()
+            self.assertTrue(res)
+            mock_notif.assert_called_once()
+            self.assertIn("Bit-perfect playback failed", mock_notif.call_args[0][1])
+
     def test_decoder_fallback_when_ffmpeg_missing(self) -> None:
         t = TrackInfo(path="/tmp/fake.flac", duration=180.0)
         self.engine._track = t
@@ -552,6 +598,11 @@ class TestMprisService(unittest.TestCase):
         self.assertEqual(str(_track_id(0)), f"{TRACK_OBJ_PATH}/0")
         self.assertEqual(str(_track_id(42)), f"{TRACK_OBJ_PATH}/42")
 
+
+class TestVersion(unittest.TestCase):
+    def test_app_version(self) -> None:
+        from constants import APP_VERSION
+        self.assertEqual(APP_VERSION, "0.1.0")
 
 
 if __name__ == "__main__":
