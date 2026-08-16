@@ -403,6 +403,7 @@ class PlayerEngine:
         self._pwcat:       Optional[subprocess.Popen] = None
         self._pump_thread: Optional[threading.Thread] = None
         self._stop_event   = threading.Event()
+        self._app_stop_event = threading.Event()
 
         self._is_setting_volume: bool = False
         self._last_vol_sync_time: float = 0.0
@@ -536,7 +537,8 @@ class PlayerEngine:
     def _start_volume_listener(self) -> None:
         """Background thread listening for desktop volume panel changes in real time."""
         def _listener():
-            while not self._stop_event.is_set():
+            while not self._app_stop_event.is_set():
+                proc = None
                 try:
                     proc = subprocess.Popen(
                         ["pactl", "subscribe"],
@@ -544,13 +546,26 @@ class PlayerEngine:
                         stderr=subprocess.DEVNULL,
                         text=True,
                     )
-                    for line in proc.stdout:
-                        if self._stop_event.is_set():
-                            break
-                        if "sink-input" in line.lower():
-                            self.sync_system_volume()
+                    if proc.stdout:
+                        for line in proc.stdout:
+                            if self._app_stop_event.is_set():
+                                break
+                            if "sink-input" in line.lower():
+                                self.sync_system_volume()
                 except Exception:
                     time.sleep(2.0)
+                finally:
+                    if proc:
+                        if proc.stdout:
+                            try:
+                                proc.stdout.close()
+                            except Exception:
+                                pass
+                        try:
+                            proc.terminate()
+                            proc.wait(timeout=0.1)
+                        except Exception:
+                            pass
 
         threading.Thread(target=_listener, daemon=True, name=f"{APP_NAME}-vol-sync").start()
 
@@ -643,6 +658,10 @@ class PlayerEngine:
             self._seek_position = 0.0
             self._bytes_written = 0
         self._set_state(STATE_STOPPED)
+
+    def close(self) -> None:
+        self._app_stop_event.set()
+        self.stop()
 
     def seek(self, position: float) -> None:
         if not self._track:

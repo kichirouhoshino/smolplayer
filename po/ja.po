@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: smolplayer\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-16 13:34+0800\n"
+"POT-Creation-Date: 2026-08-16 22:51+0800\n"
 "PO-Revision-Date: 2026-08-11 13:51+0800\n"
 "Last-Translator: smolplayer contributors\n"
 "Language-Team: Japanese\n"
@@ -17,26 +17,26 @@ msgid "Closed after being paused for {mins} minutes to save system resources."
 msgstr ""
 "システムリソースを節約するため、{mins}分間一時停止された後に終了しました。"
 
-#: main.py:163 main.py:168
+#: main.py:173 main.py:178
 #, python-brace-format
 msgid "{app_name} File Error"
 msgstr "{app_name} ファイルエラー"
 
-#: main.py:163
+#: main.py:173
 #, python-brace-format
 msgid "File or folder does not exist: {name}"
 msgstr "ファイルまたはフォルダが存在しません: {name}"
 
-#: main.py:168
+#: main.py:178
 #, python-brace-format
 msgid "Unable to find playable audio files for: {name}"
 msgstr "再生可能な音声ファイルが見つかりません: {name}"
 
-#: main.py:186
+#: main.py:196
 msgid "Playback stopped: files or drive are no longer accessible."
 msgstr "再生が停止しました: ファイルまたはドライブにアクセスできません。"
 
-#: main.py:204
+#: main.py:214
 #, python-brace-format
 msgid ""
 "{app_name} runs in the background! Open an audio file in your file manager "
@@ -45,7 +45,7 @@ msgstr ""
 "{app_name} はバックグラウンドで実行中です。ファイルマネージャーで音声ファイル"
 "を開くと再生を開始できます。"
 
-#: player.py:301 player.py:381 player.py:904
+#: player.py:301 player.py:381 player.py:923
 #, python-brace-format
 msgid "{app_name} Error"
 msgstr "{app_name} エラー"
@@ -61,7 +61,7 @@ msgid ""
 "Bit-perfect playback failed for {name}. Falling back to normal playback mode."
 msgstr ""
 
-#: player.py:905
+#: player.py:924
 #, python-brace-format
 msgid ""
 "Audio decoding failed for {name}. Neither FFmpeg nor GStreamer could process "
@@ -69,12 +69,12 @@ msgid ""
 msgstr ""
 "{name} の音声デコードに失敗しました。フォーマットを処理できませんでした。"
 
-#: player.py:986
+#: player.py:1005
 #, python-brace-format
 msgid "Could not start pw-cat: {exc}"
 msgstr "pw-cat を起動できませんでした: {exc}"
 
-#: player.py:1068
+#: player.py:1087
 msgid "Playback stopped: audio system or decoder failed repeatedly."
 msgstr ""
 "再生が停止しました: オーディオシステムまたはデコーダーでエラーが繰り返し発生"

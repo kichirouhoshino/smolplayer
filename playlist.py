@@ -11,7 +11,7 @@ from typing import List, Optional
 from utils import AUDIO_EXTS, natural_sort_key, normalize_file_path
 
 
-from config import get_config
+from config import get_config, load_toggles_state, save_toggles_state
 
 
 def sort_audio_files(audio_files: List[str], sort_method: int, folder: Optional[str] = None) -> List[str]:
@@ -159,6 +159,7 @@ class PlaylistManager:
         self._loop_status: str = "None"   # "None" | "Track" | "Playlist"
         self._shuffled_indices: List[int] = []
         self._shuffled_pos: int = 0
+        self.on_toggles_changed: Optional[Callable[[bool, str], None]] = None
 
         cfg = get_config()
         if cfg.remember_toggles:
@@ -190,6 +191,8 @@ class PlaylistManager:
         cfg = get_config()
         if cfg.remember_toggles:
             save_toggles_state(self._shuffle, self._loop_status)
+        if self.on_toggles_changed:
+            self.on_toggles_changed(self._shuffle, self._loop_status)
 
     @property
     def loop_status(self) -> str:
@@ -197,11 +200,16 @@ class PlaylistManager:
 
     @loop_status.setter
     def loop_status(self, status: str) -> None:
-        if status in ("None", "Track", "Playlist"):
-            self._loop_status = status
+        norm = {"none": "None", "track": "Track", "playlist": "Playlist"}.get(str(status).strip().lower())
+        if norm:
+            if self._loop_status == norm:
+                return
+            self._loop_status = norm
             cfg = get_config()
             if cfg.remember_toggles:
                 save_toggles_state(self._shuffle, self._loop_status)
+            if self.on_toggles_changed:
+                self.on_toggles_changed(self._shuffle, self._loop_status)
 
     def __len__(self) -> int:
         return len(self._items)
@@ -250,6 +258,18 @@ class PlaylistManager:
         abs_path = normalize_file_path(path)
         cfg = get_config()
 
+        # Handle toggles on each new play session
+        old_shuffle = self._shuffle
+        old_loop = self._loop_status
+        if cfg.remember_toggles:
+            self._shuffle, self._loop_status = load_toggles_state()
+        else:
+            self._shuffle = False
+            self._loop_status = "None"
+
+        if (old_shuffle != self._shuffle or old_loop != self._loop_status) and self.on_toggles_changed:
+            self.on_toggles_changed(self._shuffle, self._loop_status)
+
         if os.path.isdir(abs_path):
             rec = bool(cfg.recurse_folderopen)
             self._scan_folder_sync(abs_path, target_file=None, recursive=rec)
@@ -288,7 +308,10 @@ class PlaylistManager:
         if target_file and target_file in self._items:
             self._current_index = self._items.index(target_file)
         elif self._items:
-            self._current_index = 0
+            if self._shuffle:
+                self._current_index = random.randint(0, len(self._items) - 1)
+            else:
+                self._current_index = 0
         else:
             self._current_index = -1
 
@@ -362,7 +385,6 @@ class PlaylistManager:
                 self._current_index = 0
             else:
                 return None
-            return self._items[self._current_index]
             return self._items[self._current_index]
 
     def get_previous(self) -> Optional[str]:

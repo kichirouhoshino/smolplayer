@@ -118,7 +118,7 @@ def main() -> None:
 
     def handle_quit() -> None:
         power_inhibitor.uninhibit()
-        engine.stop()
+        engine.close()
         loop.quit()
         sys.exit(0)
 
@@ -139,8 +139,14 @@ def main() -> None:
         if mpris:
             mpris.notify_volume(new_vol)
 
+    def handle_toggles_change(shuffle: bool, loop_status: str) -> None:
+        if mpris:
+            mpris.notify_shuffle(shuffle)
+            mpris.notify_loop(loop_status)
+
     engine.on_state_change = handle_state_change
     engine.on_volume_change = handle_volume_change
+    playlist.on_toggles_changed = handle_toggles_change
 
     def play_track(track_path: Optional[str]) -> bool:
         if not track_path or not os.path.isfile(track_path):

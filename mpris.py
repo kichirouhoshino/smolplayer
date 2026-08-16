@@ -242,10 +242,10 @@ if _DBUS_OK:
                 self._playlist.shuffle = shuf
                 self.notify_shuffle(shuf)
             elif property_name == "LoopStatus":
-                ls = str(value)
-                if ls in ("None", "Track", "Playlist"):
-                    self._playlist.loop_status = ls
-                    self.notify_loop(ls)
+                norm = {"none": "None", "track": "Track", "playlist": "Playlist"}.get(str(value).strip().lower())
+                if norm:
+                    self._playlist.loop_status = norm
+                    self.notify_loop(norm)
 
         # ---------------------------------------------------------------
         # org.mpris.MediaPlayer2 interface

@@ -79,7 +79,7 @@ _OPTION_BLOCKS: dict[str, str] = {
         "presence = 0\n"
     ),
     "remember_toggles": (
-        "\n# Set whether to remember Shuffle and Repeat across app opens\n"
+        "\n# Set whether to remember Shuffle and Repeat across play sessions\n"
         "# 0 - False (default)\n"
         "# 1 - True\n"
         "# Default is 0\n"
@@ -214,7 +214,10 @@ def load_toggles_state() -> tuple[bool, str]:
         if os.path.exists(_STATE_FILE):
             with open(_STATE_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                return bool(data.get("shuffle", False)), str(data.get("loop_status", "None"))
+                shuf = bool(data.get("shuffle", False))
+                raw_loop = str(data.get("loop_status", "None"))
+                norm_loop = {"none": "None", "track": "Track", "playlist": "Playlist"}.get(raw_loop.strip().lower(), "None")
+                return shuf, norm_loop
     except Exception:
         pass
     return False, "None"

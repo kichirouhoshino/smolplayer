@@ -213,17 +213,18 @@ class TestPlaylistManager(unittest.TestCase):
         self.assertEqual(pm.get_next(), self.f1)
 
     def test_shuffle_mode(self) -> None:
-        pm = PlaylistManager()
-        pm.load_file_or_folder(self.root)
-        pm.shuffle = True
+        with patch("playlist.get_config", return_value=Config(remember_toggles=0)):
+            pm = PlaylistManager()
+            pm.load_file_or_folder(self.root)
+            pm.shuffle = True
 
-        self.assertTrue(pm.shuffle)
-        self.assertEqual(len(pm._shuffled_indices), 3)
-        # Current playing track must stay at position 0 in shuffled queue
-        self.assertEqual(pm._shuffled_indices[0], 0)
+            self.assertTrue(pm.shuffle)
+            self.assertEqual(len(pm._shuffled_indices), 3)
+            # Current playing track must stay at position 0 in shuffled queue
+            self.assertEqual(pm._shuffled_indices[0], 0)
 
-        pm.shuffle = False
-        self.assertFalse(pm.shuffle)
+            pm.shuffle = False
+            self.assertFalse(pm.shuffle)
 
     def test_sort_methods(self) -> None:
         from playlist import sort_audio_files
@@ -244,13 +245,52 @@ class TestPlaylistManager(unittest.TestCase):
             sorted_artist = sort_audio_files(list(files), sort_method=3)
             self.assertEqual(sorted_artist[0], self.f3)  # Apple first
 
+    def test_remember_toggles_across_play_sessions(self) -> None:
+        # Case 1: remember_toggles == 0 (default: resets on every new play session)
+        with patch("playlist.get_config", return_value=Config(remember_toggles=0)):
+            pm = PlaylistManager()
+            pm.load_file_or_folder(self.root)
+            pm.shuffle = True
+            pm.loop_status = "Track"
+            self.assertTrue(pm.shuffle)
+            self.assertEqual(pm.loop_status, "Track")
+
+            # Starting a new play session resets toggles to False / "None"
+            pm.load_file_or_folder(self.f1)
+            self.assertFalse(pm.shuffle)
+            self.assertEqual(pm.loop_status, "None")
+
+        # Case 2: remember_toggles == 1 (persists across play sessions and app opens)
+        with patch("playlist.get_config", return_value=Config(remember_toggles=1)):
+            pm = PlaylistManager()
+            pm.load_file_or_folder(self.root)
+            pm.shuffle = True
+            pm.loop_status = "Playlist"
+            self.assertTrue(pm.shuffle)
+            self.assertEqual(pm.loop_status, "Playlist")
+
+            # Starting a new play session keeps the toggles
+            pm.load_file_or_folder(self.f2)
+            self.assertTrue(pm.shuffle)
+            self.assertEqual(pm.loop_status, "Playlist")
+
+    def test_open_folder_with_shuffle_enabled_plays_random_track(self) -> None:
+        with patch("playlist.get_config", return_value=Config(remember_toggles=1)), \
+             patch("playlist.load_toggles_state", return_value=(True, "None")), \
+             patch("random.randint", return_value=2):
+            pm = PlaylistManager()
+            first_track = pm.load_file_or_folder(self.root)
+            self.assertEqual(first_track, self.f3)
+            self.assertEqual(pm.current_index, 2)
+            self.assertEqual(pm._shuffled_indices[0], 2)
+
 
 class TestPlayerEngine(unittest.TestCase):
     def setUp(self) -> None:
         self.engine = PlayerEngine()
 
     def tearDown(self) -> None:
-        self.engine.stop()
+        self.engine.close()
 
     def test_engine_initial_state(self) -> None:
         with patch.object(self.engine, "sync_system_volume"):
@@ -430,13 +470,21 @@ class TestPlayerEngine(unittest.TestCase):
 
     def test_gstreamer_seeking_cmd_args(self) -> None:
         t = TrackInfo(path="/tmp/fake.flac", duration=180.0)
-        with patch("subprocess.Popen") as mock_popen:
+        with patch("shutil.which", return_value="/usr/bin/gst-launch-1.0"), \
+             patch("player._get_pactl_output", return_value=("alsa_output", "")), \
+             patch("subprocess.Popen") as mock_popen:
             mock_popen.return_value.poll.return_value = None
             proc = self.engine._spawn_gstreamer_proc(t, 30.0)
             self.assertIsNotNone(proc)
-            cmd = mock_popen.call_args[0][0]
-            self.assertIn("p.seek_simple", cmd[2])
-            self.assertIn("30.0 * 1e9", cmd[2])
+            py_call = None
+            for call_item in mock_popen.call_args_list:
+                args = call_item[0][0]
+                if isinstance(args, list) and len(args) > 2 and args[0] == sys.executable:
+                    py_call = args
+                    break
+            self.assertIsNotNone(py_call)
+            self.assertIn("p.seek_simple", py_call[2])
+            self.assertIn("30.0 * 1e9", py_call[2])
 
     def test_both_decoders_failed_notification(self) -> None:
         t = TrackInfo(path="/tmp/fake.flac", duration=180.0)

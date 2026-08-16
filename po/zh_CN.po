@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: smolplayer\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-16 13:34+0800\n"
+"POT-Creation-Date: 2026-08-16 22:51+0800\n"
 "PO-Revision-Date: 2026-08-11 13:50+0800\n"
 "Last-Translator: smolplayer contributors\n"
 "Language-Team: Chinese (Simplified)\n"
@@ -16,33 +16,33 @@ msgstr ""
 msgid "Closed after being paused for {mins} minutes to save system resources."
 msgstr "暂停 {mins} 分钟后已自动关闭以节省系统资源。"
 
-#: main.py:163 main.py:168
+#: main.py:173 main.py:178
 #, python-brace-format
 msgid "{app_name} File Error"
 msgstr "{app_name} 文件错误"
 
-#: main.py:163
+#: main.py:173
 #, python-brace-format
 msgid "File or folder does not exist: {name}"
 msgstr "文件或文件夹不存在：{name}"
 
-#: main.py:168
+#: main.py:178
 #, python-brace-format
 msgid "Unable to find playable audio files for: {name}"
 msgstr "未找到可播放的音频文件：{name}"
 
-#: main.py:186
+#: main.py:196
 msgid "Playback stopped: files or drive are no longer accessible."
 msgstr "播放已停止：文件或驱动器无法再访问。"
 
-#: main.py:204
+#: main.py:214
 #, python-brace-format
 msgid ""
 "{app_name} runs in the background! Open an audio file in your file manager "
 "to start music playback and control it using your desktop media widget."
 msgstr "{app_name} 正在后台运行！请在文件管理器中打开音频文件以开始播放。"
 
-#: player.py:301 player.py:381 player.py:904
+#: player.py:301 player.py:381 player.py:923
 #, python-brace-format
 msgid "{app_name} Error"
 msgstr "{app_name} 错误"
@@ -58,19 +58,19 @@ msgid ""
 "Bit-perfect playback failed for {name}. Falling back to normal playback mode."
 msgstr ""
 
-#: player.py:905
+#: player.py:924
 #, python-brace-format
 msgid ""
 "Audio decoding failed for {name}. Neither FFmpeg nor GStreamer could process "
 "format."
 msgstr "{name} 的音频解码失败。FFmpeg 和 GStreamer 均无法处理该格式。"
 
-#: player.py:986
+#: player.py:1005
 #, python-brace-format
 msgid "Could not start pw-cat: {exc}"
 msgstr "无法启动 pw-cat：{exc}"
 
-#: player.py:1068
+#: player.py:1087
 msgid "Playback stopped: audio system or decoder failed repeatedly."
 msgstr "播放已停止：音频系统或解码器多次失败。"
 
