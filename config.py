@@ -114,10 +114,11 @@ _OPTION_BLOCKS: dict[str, str] = {
         "internal_resampler = 0\n"
     ),
     "bit_perfect": (
-        "\n# Enable Bit-Perfect Playback\n"
+        "\n# Enable Bit-Perfect Playback (Experimental)\n"
         "# When this fails, playback will fallback to normal mode until the next track.\n"
-        "# Only enable this if you are sure that your DAC supports the audio formats\n"
-        "# you own!\n"
+        "# Has a chance to break at times, especially when you attempt to play something\n"
+        "# that your DAC does not support. Also you can't play audio from other apps at\n"
+        "# the same time. Use with caution!\n"
         "# Default is 0\n"
         "bit_perfect = 0\n"
     ),

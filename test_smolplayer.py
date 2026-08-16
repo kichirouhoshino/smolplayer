@@ -375,7 +375,7 @@ class TestPlayerEngine(unittest.TestCase):
 
         with patch("subprocess.Popen") as mock_popen, \
              patch("shutil.which", side_effect=fake_which), \
-             patch("player.get_alsa_hw_device", return_value="hw:0,0"):
+             patch("player.get_alsa_hw_device", return_value="plughw:0,0"):
             mock_popen.return_value.poll.return_value = None
             self.engine._pwcat = None
             self.engine._launch_pipeline()
@@ -387,7 +387,7 @@ class TestPlayerEngine(unittest.TestCase):
                     break
             self.assertIsNotNone(aplay_call)
             self.assertIn("-D", aplay_call)
-            self.assertEqual(aplay_call[aplay_call.index("-D") + 1], "hw:0,0")
+            self.assertEqual(aplay_call[aplay_call.index("-D") + 1], "plughw:0,0")
 
         call_count = 0
         def fake_popen(cmd, **kwargs):

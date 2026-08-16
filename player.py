@@ -143,7 +143,7 @@ def get_system_sink_info() -> tuple[str, int]:
 
 
 def get_alsa_hw_device() -> str:
-    """Detect active default ALSA hardware device (e.g. 'hw:1,0' or 'hw:CARD,DEV') or fallback."""
+    """Detect active default ALSA hardware device (e.g. 'plughw:1,0') or fallback."""
     default_sink, sinks_txt = _get_pactl_output()
     if sinks_txt:
         current_card = None
@@ -159,8 +159,8 @@ def get_alsa_hw_device() -> str:
             elif "alsa.device =" in s:
                 current_dev = s.split("alsa.device =")[1].strip().strip('"')
                 if is_default and current_card is not None:
-                    return f"hw:{current_card},{current_dev}"
-    return "hw:0,0"
+                    return f"plughw:{current_card},{current_dev}"
+    return "plughw:0,0"
 
 
 import shutil
