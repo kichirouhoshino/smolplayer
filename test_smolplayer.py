@@ -57,12 +57,27 @@ class TestConfig(unittest.TestCase):
         self.assertFalse(c3.notifications_enabled)
 
     def test_remember_toggles_state(self) -> None:
-        from config import save_toggles_state, load_toggles_state
+        from config import save_toggles_state, load_toggles_state, normalize_loop_status
+        self.assertEqual(normalize_loop_status("off"), "None")
+        self.assertEqual(normalize_loop_status("none"), "None")
+        self.assertEqual(normalize_loop_status("false"), "None")
+        self.assertEqual(normalize_loop_status(False), "None")
+        self.assertEqual(normalize_loop_status("track"), "Track")
+        self.assertEqual(normalize_loop_status("single"), "Track")
+        self.assertEqual(normalize_loop_status("playlist"), "Playlist")
+        self.assertEqual(normalize_loop_status("all"), "Playlist")
+        self.assertEqual(normalize_loop_status(True), "Playlist")
+
         save_toggles_state(True, "Playlist")
         shuf, loop = load_toggles_state()
         self.assertTrue(shuf)
         self.assertEqual(loop, "Playlist")
+
+        # Verify saving off / none properly persists
         save_toggles_state(False, "None")
+        shuf, loop = load_toggles_state()
+        self.assertFalse(shuf)
+        self.assertEqual(loop, "None")
 
     def test_decode_method_option(self) -> None:
         cfg = Config()
@@ -212,6 +227,10 @@ class TestPlaylistManager(unittest.TestCase):
         # Loop status Playlist -> Wraps around
         pm.loop_status = "Playlist"
         self.assertEqual(pm.get_next(), self.f1)
+
+        # Setting loop status to 'off' or 'none' sets it back to 'None'
+        pm.loop_status = "off"
+        self.assertEqual(pm.loop_status, "None")
 
     def test_shuffle_mode(self) -> None:
         with patch("playlist.get_config", return_value=Config(remember_toggles=0)):

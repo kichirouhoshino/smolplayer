@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from urllib.parse import unquote, urlparse
 
 from utils import send_notification
+from config import normalize_loop_status
 from i18n import _
 from constants import (
     APP_NAME,
@@ -242,10 +243,9 @@ if _DBUS_OK:
                 self._playlist.shuffle = shuf
                 self.notify_shuffle(shuf)
             elif property_name == "LoopStatus":
-                norm = {"none": "None", "track": "Track", "playlist": "Playlist"}.get(str(value).strip().lower())
-                if norm:
-                    self._playlist.loop_status = norm
-                    self.notify_loop(norm)
+                norm = normalize_loop_status(value)
+                self._playlist.loop_status = norm
+                self.notify_loop(norm)
 
         # ---------------------------------------------------------------
         # org.mpris.MediaPlayer2 interface

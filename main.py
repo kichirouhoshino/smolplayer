@@ -217,6 +217,8 @@ def main() -> None:
 
     # 2. Register MPRIS D-Bus service while audio is already playing
     mpris = MprisService(engine, playlist, on_quit=handle_quit, on_open_uri=handle_open_uri)
+    mpris.notify_shuffle(playlist.shuffle)
+    mpris.notify_loop(playlist.loop_status)
     if engine.track:
         mpris.notify_track(engine.track, playlist.current_index)
         if tray:

@@ -11,7 +11,7 @@ from typing import List, Optional
 from utils import AUDIO_EXTS, natural_sort_key, normalize_file_path
 
 
-from config import get_config, load_toggles_state, save_toggles_state
+from config import get_config, load_toggles_state, save_toggles_state, normalize_loop_status
 
 
 def sort_audio_files(audio_files: List[str], sort_method: int, folder: Optional[str] = None) -> List[str]:
@@ -200,16 +200,15 @@ class PlaylistManager:
 
     @loop_status.setter
     def loop_status(self, status: str) -> None:
-        norm = {"none": "None", "track": "Track", "playlist": "Playlist"}.get(str(status).strip().lower())
-        if norm:
-            if self._loop_status == norm:
-                return
-            self._loop_status = norm
-            cfg = get_config()
-            if cfg.remember_toggles:
-                save_toggles_state(self._shuffle, self._loop_status)
-            if self.on_toggles_changed:
-                self.on_toggles_changed(self._shuffle, self._loop_status)
+        norm = normalize_loop_status(status)
+        if self._loop_status == norm:
+            return
+        self._loop_status = norm
+        cfg = get_config()
+        if cfg.remember_toggles:
+            save_toggles_state(self._shuffle, self._loop_status)
+        if self.on_toggles_changed:
+            self.on_toggles_changed(self._shuffle, self._loop_status)
 
     def __len__(self) -> int:
         return len(self._items)

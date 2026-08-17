@@ -218,6 +218,22 @@ def get_config() -> Config:
     return cfg
 
 
+def normalize_loop_status(value: Any) -> str:
+    """Normalize loop status across desktop environments and MPRIS clients."""
+    if isinstance(value, bool):
+        return "Playlist" if value else "None"
+    if isinstance(value, (int, float)):
+        return "Playlist" if value else "None"
+    s = str(value).strip().lower()
+    if s in ("none", "off", "false", "0", ""):
+        return "None"
+    if s in ("track", "single", "one"):
+        return "Track"
+    if s in ("playlist", "all", "true", "1", "repeat"):
+        return "Playlist"
+    return "None"
+
+
 def load_toggles_state() -> tuple[bool, str]:
     """Load remembered (shuffle, loop_status) state."""
     try:
@@ -225,8 +241,8 @@ def load_toggles_state() -> tuple[bool, str]:
             with open(_STATE_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 shuf = bool(data.get("shuffle", False))
-                raw_loop = str(data.get("loop_status", "None"))
-                norm_loop = {"none": "None", "track": "Track", "playlist": "Playlist"}.get(raw_loop.strip().lower(), "None")
+                raw_loop = data.get("loop_status", "None")
+                norm_loop = normalize_loop_status(raw_loop)
                 return shuf, norm_loop
     except Exception:
         pass
