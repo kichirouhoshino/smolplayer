@@ -110,6 +110,7 @@ def main() -> None:
     engine.replay_gain = cfg.replay_gain
     engine.replaygain_preamp = cfg.replaygain_preamp
     engine.replaygain_default_preamp = cfg.replaygain_default_preamp
+    engine.replaygain_peaking = cfg.replaygain_peaking
     engine.internal_resampler = cfg.internal_resampler
     engine.bit_perfect = cfg.bit_perfect
     playlist = PlaylistManager()

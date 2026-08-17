@@ -104,6 +104,14 @@ _OPTION_BLOCKS: dict[str, str] = {
         "# Default is 0\n"
         "replaygain_default_preamp = 0\n"
     ),
+    "replaygain_peaking": (
+        "\n# Set how will smolplayer handle peaks when ReplayGain is on\n"
+        "# 0 - Disabled\n"
+        "# 1 - Apply appropriate gain\n"
+        "# 2 - Dynamic range compression (if it clips)\n"
+        "# Default is 0\n"
+        "replaygain_peaking = 0\n"
+    ),
     "internal_resampler": (
         "\n# Set whether to use ffmpeg/gstreamer for resampling when format does not\n"
         "# match the output device. It is highly recommended to keep this DISABLED,\n"
@@ -140,6 +148,7 @@ class Config:
     decode_method: int = 0
     replaygain_preamp: float = 0.0
     replaygain_default_preamp: float = 0.0
+    replaygain_peaking: int = 0
     internal_resampler: int = 0
     bit_perfect: int = 0
 
@@ -188,6 +197,7 @@ def get_config() -> Config:
             cfg.replay_gain = sec.getint("replay_gain", 0)
             cfg.replaygain_preamp = sec.getfloat("replaygain_preamp", 0.0)
             cfg.replaygain_default_preamp = sec.getfloat("replaygain_default_preamp", 0.0)
+            cfg.replaygain_peaking = sec.getint("replaygain_peaking", 0)
             cfg.shuffle_algo = sec.getint("shuffle_algo", 0)
             cfg.sort_method = sec.getint("sort_method", 0)
             cfg.recurse_fileopen = sec.getint("recurse_fileopen", 0)

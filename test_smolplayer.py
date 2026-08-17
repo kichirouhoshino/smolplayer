@@ -4,6 +4,7 @@ test_smolplayer.py – Unit and integration test suite for smolplayer.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
@@ -21,7 +22,7 @@ from utils import (
 from playlist import PlaylistManager, scan_audio_files_recursive
 from player import (
     PlayerEngine, TrackInfo, STATE_PLAYING, STATE_PAUSED, STATE_STOPPED,
-    get_system_sink_info,
+    get_system_sink_info, _probe_metadata,
 )
 from tray import TrayService
 from mpris import _track_id
@@ -328,7 +329,7 @@ class TestPlayerEngine(unittest.TestCase):
             self.assertIsNotNone(proc)
             cmd = mock_popen.call_args[0][0]
             self.assertIn("-af", cmd)
-            self.assertIn("volume=-0.50dB", cmd)  # -3.50 + 3.0 = -0.50
+            self.assertIn("volume=-0.50dB", cmd[cmd.index("-af") + 1])  # -3.50 + 3.0 = -0.50
 
         # Track Gain ON without RG info (uses default preamp)
         with patch("subprocess.Popen") as mock_popen, patch("shutil.which", return_value="/usr/bin/ffmpeg"):
@@ -337,7 +338,177 @@ class TestPlayerEngine(unittest.TestCase):
             self.assertIsNotNone(proc)
             cmd = mock_popen.call_args[0][0]
             self.assertIn("-af", cmd)
-            self.assertIn("volume=-2.00dB", cmd)
+            self.assertIn("volume=-2.00dB", cmd[cmd.index("-af") + 1])
+
+    def test_replaygain_peaking_modes(self) -> None:
+        self.engine.replay_gain = 1
+        self.engine.replaygain_preamp = 0.0
+        t_peaking = TrackInfo(path="/tmp/fake.flac", duration=180.0, track_gain_db=6.0, track_peak=1.0)
+
+        # Mode 0 (Disabled) -> gain is +6.00 dB, no limiter
+        self.engine.replaygain_peaking = 0
+        self.assertEqual(self.engine._calc_replaygain_db(t_peaking), 6.0)
+        with patch("subprocess.Popen") as mock_popen, patch("shutil.which", return_value="/usr/bin/ffmpeg"):
+            mock_popen.return_value.poll.return_value = None
+            self.engine._spawn_ffmpeg_proc(t_peaking, 0.0)
+            cmd = mock_popen.call_args[0][0]
+            self.assertIn("volume=6.00dB", cmd[cmd.index("-af") + 1])
+            self.assertNotIn("alimiter", cmd[cmd.index("-af") + 1])
+
+        # Mode 1 (Appropriate gain) -> gain reduced to 0.0 dB to prevent clipping on 1.0 peak
+        self.engine.replaygain_peaking = 1
+        self.assertAlmostEqual(self.engine._calc_replaygain_db(t_peaking), 0.0, places=2)
+
+        # Mode 2 (Dynamic range compression) -> gain is +6.00 dB, but alimiter is appended because it clips
+        self.engine.replaygain_peaking = 2
+        self.assertEqual(self.engine._calc_replaygain_db(t_peaking), 6.0)
+        with patch("subprocess.Popen") as mock_popen, patch("shutil.which", return_value="/usr/bin/ffmpeg"):
+            mock_popen.return_value.poll.return_value = None
+            self.engine._spawn_ffmpeg_proc(t_peaking, 0.0)
+            cmd = mock_popen.call_args[0][0]
+            af = cmd[cmd.index("-af") + 1]
+            self.assertIn("volume=6.00dB", af)
+            self.assertIn("alimiter=limit=1.0", af)
+
+        # Mode 2 with GStreamer
+        with patch("subprocess.Popen") as mock_popen, \
+             patch("shutil.which", return_value="/usr/bin/gst-launch-1.0"), \
+             patch("player._get_pactl_output", return_value=("alsa_output", "")):
+            mock_popen.return_value.poll.return_value = None
+            self.engine._spawn_gstreamer_proc(t_peaking, 0.0)
+            py_call = None
+            for call_item in mock_popen.call_args_list:
+                args = call_item[0][0]
+                if isinstance(args, list) and len(args) > 2 and args[0] == sys.executable:
+                    py_call = args
+                    break
+            self.assertIsNotNone(py_call)
+            self.assertIn("audiodynamic", py_call[2])
+
+        # Test user preamp adjustment on ReplayGain track with peaking
+        self.engine.replaygain_preamp = 3.0  # total gain = 6.0 + 3.0 = 9.0 dB
+        self.engine.replaygain_peaking = 1
+        self.assertAlmostEqual(self.engine._calc_replaygain_db(t_peaking), 0.0, places=2)
+
+        # Test user default_preamp adjustment on Non-ReplayGain track with peaking
+        t_no_rg = TrackInfo(path="/tmp/fake_norg.flac", duration=180.0)
+        self.engine.replaygain_default_preamp = 4.0  # positive default preamp on non-RG track
+        self.engine.replaygain_peaking = 0
+        self.assertEqual(self.engine._calc_replaygain_db(t_no_rg), 4.0)
+
+        # Mode 1 clamps positive default preamp to 0.0 to prevent clipping
+        self.engine.replaygain_peaking = 1
+        self.assertEqual(self.engine._calc_replaygain_db(t_no_rg), 0.0)
+
+        # Mode 2 applies positive default preamp (+4.0 dB) with limiter enabled
+        self.engine.replaygain_peaking = 2
+        self.assertEqual(self.engine._calc_replaygain_db(t_no_rg), 4.0)
+        self.assertTrue(self.engine._replaygain_should_compress(t_no_rg, 4.0))
+
+        # Negative default preamp (-3.0 dB) does not clip and needs no compression
+        self.engine.replaygain_default_preamp = -3.0
+        self.engine.replaygain_peaking = 1
+        self.assertEqual(self.engine._calc_replaygain_db(t_no_rg), -3.0)
+        self.engine.replaygain_peaking = 2
+        self.assertEqual(self.engine._calc_replaygain_db(t_no_rg), -3.0)
+        self.assertFalse(self.engine._replaygain_should_compress(t_no_rg, -3.0))
+
+    def test_replaygain_priority_over_r128(self) -> None:
+        ffprobe_output = {
+            "format": {
+                "duration": "120.0",
+                "tags": {
+                    "R128_TRACK_GAIN": "-8.5 dB",
+                    "REPLAYGAIN_TRACK_GAIN": "-4.2 dB",
+                    "R128_ALBUM_GAIN": "-7.0 dB",
+                    "REPLAYGAIN_ALBUM_GAIN": "-3.1 dB",
+                    "R128_TRACK_PEAK": "0.95",
+                    "REPLAYGAIN_TRACK_PEAK": "0.85",
+                }
+            },
+            "streams": [{
+                "sample_rate": "44100",
+                "channels": 2,
+                "sample_fmt": "s16",
+                "tags": {}
+            }]
+        }
+        with patch("subprocess.run") as mock_run:
+            mock_res = MagicMock()
+            mock_res.returncode = 0
+            mock_res.stdout = json.dumps(ffprobe_output)
+            mock_run.return_value = mock_res
+
+            meta = _probe_metadata("/tmp/fake_both_tags.flac")
+            self.assertIsNotNone(meta)
+            self.assertEqual(meta["track_gain_db"], -4.2)
+            self.assertEqual(meta["album_gain_db"], -3.1)
+            self.assertEqual(meta["track_peak"], 0.85)
+
+    def test_16bit_replaygain_peak_normalization(self) -> None:
+        # Legacy 16-bit tags with raw sample peak value (e.g. 32767)
+        ffprobe_16bit = {
+            "format": {
+                "duration": "120.0",
+                "tags": {
+                    "REPLAYGAIN_TRACK_GAIN": "-2.5 dB",
+                    "REPLAYGAIN_TRACK_PEAK": "32768",
+                }
+            },
+            "streams": [{
+                "sample_rate": "44100",
+                "channels": 2,
+                "sample_fmt": "s16",
+                "tags": {}
+            }]
+        }
+        with patch("subprocess.run") as mock_run:
+            mock_res = MagicMock()
+            mock_res.returncode = 0
+            mock_res.stdout = json.dumps(ffprobe_16bit)
+            mock_run.return_value = mock_res
+
+            meta = _probe_metadata("/tmp/fake_16bit.flac")
+            self.assertIsNotNone(meta)
+            self.assertEqual(meta["track_gain_db"], -2.5)
+            self.assertEqual(meta["track_peak"], 1.0)  # 32768 / 32768.0 = 1.0
+
+    def test_bit_perfect_no_audio_processing(self) -> None:
+        t = TrackInfo(
+            path="/tmp/fake.flac",
+            duration=180.0,
+            track_gain_db=6.0,
+            track_peak=1.0,
+            sample_rate=96000,
+            channels=2,
+            ffmpeg_fmt="s32le",
+            pwcat_fmt="s32",
+        )
+        self.engine.replay_gain = 1
+        self.engine.replaygain_preamp = 3.0
+        self.engine.replaygain_peaking = 2
+        self.engine.internal_resampler = 1
+        self.engine.bit_perfect = 1
+
+        # FFmpeg in bit-perfect mode must NOT contain any -af filter
+        with patch("subprocess.Popen") as mock_popen, patch("shutil.which", return_value="/usr/bin/ffmpeg"):
+            mock_popen.return_value.poll.return_value = None
+            self.engine._spawn_ffmpeg_proc(t, 0.0, is_bit_perfect=True)
+            cmd = mock_popen.call_args[0][0]
+            self.assertNotIn("-af", cmd)
+            self.assertIn("-f", cmd)
+            self.assertEqual(cmd[cmd.index("-f") + 1], "s32le")
+
+        # GStreamer in bit-perfect mode must NOT contain volume, audiodynamic, or resampler
+        with patch("subprocess.Popen") as mock_popen, \
+             patch("shutil.which", return_value="/usr/bin/gst-launch-1.0"):
+            mock_popen.return_value.poll.return_value = None
+            self.engine._spawn_gstreamer_proc(t, 0.0, is_bit_perfect=True)
+            py_call = mock_popen.call_args_list[0][0][0]
+            self.assertNotIn("volume", py_call[2])
+            self.assertNotIn("audiodynamic", py_call[2])
+            self.assertNotIn("audioresample", py_call[2])
+            self.assertIn("audio/x-raw,format=S32LE,layout=interleaved", py_call[2])
 
     def test_audiophile_mode_cmd_args(self) -> None:
         t = TrackInfo(path="/tmp/fake.flac", duration=180.0)
@@ -461,12 +632,18 @@ class TestPlayerEngine(unittest.TestCase):
             return None
 
         with patch("shutil.which", side_effect=fake_which), \
+             patch("player._get_pactl_output", return_value=("alsa_output", "")), \
              patch("subprocess.Popen") as mock_popen:
             mock_popen.return_value.poll.return_value = None
             proc = self.engine._spawn_gstreamer_proc(t, 0.0)
             self.assertIsNotNone(proc)
-            cmd = mock_popen.call_args[0][0]
-            self.assertEqual(cmd[0], sys.executable)
+            py_call = None
+            for call_item in mock_popen.call_args_list:
+                args = call_item[0][0]
+                if isinstance(args, list) and len(args) > 0 and args[0] == sys.executable:
+                    py_call = args
+                    break
+            self.assertIsNotNone(py_call)
 
     def test_gstreamer_seeking_cmd_args(self) -> None:
         t = TrackInfo(path="/tmp/fake.flac", duration=180.0)

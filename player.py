@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import json
+import math
 import os
 import re
 import subprocess
@@ -85,6 +86,8 @@ class TrackInfo:
     cover_url: Optional[str] = None
     track_gain_db: Optional[float] = None
     album_gain_db: Optional[float] = None
+    track_peak: Optional[float] = None
+    album_peak: Optional[float] = None
 
 
 def extract_cover(path: str) -> Optional[bytes]:
@@ -191,6 +194,25 @@ _APLAY_FMT_MAP: dict[str, str] = {
 }
 
 
+def _normalize_peak(val: Optional[float], sample_fmt: str = "s16") -> Optional[float]:
+    """Normalize peak value to 0.0-1.0 float range, handling legacy integer peak tags (8-bit, 16-bit, 24-bit, 32-bit)."""
+    if val is None or val <= 0.0:
+        return None
+    # If peak was written as a raw integer sample value rather than a 0.0-1.0 ratio
+    if val > 1.5:
+        if sample_fmt == "u8" and val <= 256.0:
+            return val / 256.0
+        elif val <= 32768.0:
+            return val / 32768.0
+        elif val <= 65536.0:
+            return val / 65536.0
+        elif val <= 8388608.0:
+            return val / 8388608.0
+        elif val <= 2147483648.0:
+            return val / 2147483648.0
+    return val
+
+
 def _probe_metadata_gstreamer(path: str) -> Optional[dict]:
     """Probe audio metadata using GStreamer Discoverer."""
     try:
@@ -231,6 +253,8 @@ def _probe_metadata_gstreamer(path: str) -> Optional[dict]:
         album = ""
         track_gain_db = None
         album_gain_db = None
+        track_peak = None
+        album_peak = None
 
         if tags:
             res, val = tags.get_string("title")
@@ -243,21 +267,25 @@ def _probe_metadata_gstreamer(path: str) -> Optional[dict]:
             if res:
                 album = val
 
-            for tag_name in ("replaygain-track-gain", "replaygain_track_gain", "r128-track-gain"):
-                res, val = tags.get_string(tag_name)
-                if res and val:
-                    m = re.search(r"([-+]?\d+(?:\.\d+)?)", str(val))
-                    if m:
-                        track_gain_db = float(m.group(1))
-                        break
+            def _find_gst_tag(primary_tags: tuple[str, ...], fallback_tags: tuple[str, ...]) -> Optional[float]:
+                for tag_name in primary_tags:
+                    res, val = tags.get_string(tag_name)
+                    if res and val:
+                        m = re.search(r"([-+]?\d+(?:\.\d+)?)", str(val))
+                        if m:
+                            return float(m.group(1))
+                for tag_name in fallback_tags:
+                    res, val = tags.get_string(tag_name)
+                    if res and val:
+                        m = re.search(r"([-+]?\d+(?:\.\d+)?)", str(val))
+                        if m:
+                            return float(m.group(1))
+                return None
 
-            for tag_name in ("replaygain-album-gain", "replaygain_album_gain", "r128-album-gain"):
-                res, val = tags.get_string(tag_name)
-                if res and val:
-                    m = re.search(r"([-+]?\d+(?:\.\d+)?)", str(val))
-                    if m:
-                        album_gain_db = float(m.group(1))
-                        break
+            track_gain_db = _find_gst_tag(("replaygain-track-gain", "replaygain_track_gain"), ("r128-track-gain", "r128_track_gain"))
+            album_gain_db = _find_gst_tag(("replaygain-album-gain", "replaygain_album_gain"), ("r128-album-gain", "r128_album_gain"))
+            track_peak = _normalize_peak(_find_gst_tag(("replaygain-track-peak", "replaygain_track_peak"), ("r128-track-peak", "r128_track_peak")), raw_fmt)
+            album_peak = _normalize_peak(_find_gst_tag(("replaygain-album-peak", "replaygain_album_peak"), ("r128-album-peak", "r128_album_peak")), raw_fmt)
 
         return {
             "title": title,
@@ -272,6 +300,8 @@ def _probe_metadata_gstreamer(path: str) -> Optional[dict]:
             "bytes_per_sample": bps,
             "track_gain_db": track_gain_db,
             "album_gain_db": album_gain_db,
+            "track_peak": track_peak,
+            "album_peak": album_peak,
         }
     except Exception:
         return None
@@ -318,6 +348,8 @@ def probe_track(path: str) -> TrackInfo:
         cover_url=None,
         track_gain_db=meta.get("track_gain_db"),
         album_gain_db=meta.get("album_gain_db"),
+        track_peak=meta.get("track_peak"),
+        album_peak=meta.get("album_peak"),
     )
 
 
@@ -345,20 +377,26 @@ def _probe_metadata(path: str) -> Optional[dict]:
     tags = {k.lower(): v for k, v in fmt.get("tags", {}).items()}
     tags.update({k.lower(): v for k, v in astream.get("tags", {}).items()})
 
-    track_gain_db: Optional[float] = None
-    album_gain_db: Optional[float] = None
-    for k, v in tags.items():
-        if "replaygain_track_gain" in k or "r128_track_gain" in k:
-            m = re.search(r"([-+]?\d+(?:\.\d+)?)", str(v))
-            if m:
-                track_gain_db = float(m.group(1))
-        elif "replaygain_album_gain" in k or "r128_album_gain" in k:
-            m = re.search(r"([-+]?\d+(?:\.\d+)?)", str(v))
-            if m:
-                album_gain_db = float(m.group(1))
+    def _find_tag_float(tag_dict: dict, primary_keys: tuple[str, ...], fallback_keys: tuple[str, ...]) -> Optional[float]:
+        for k, v in tag_dict.items():
+            if any(pk in k for pk in primary_keys):
+                m = re.search(r"([-+]?\d+(?:\.\d+)?)", str(v))
+                if m:
+                    return float(m.group(1))
+        for k, v in tag_dict.items():
+            if any(fk in k for fk in fallback_keys):
+                m = re.search(r"([-+]?\d+(?:\.\d+)?)", str(v))
+                if m:
+                    return float(m.group(1))
+        return None
 
     raw_fmt = astream.get("sample_fmt", "s16")
     ffmpeg_fmt, pwcat_fmt, bps = _FMT_MAP.get(raw_fmt, _DEFAULT_FMT)
+
+    track_gain_db = _find_tag_float(tags, ("replaygain_track_gain", "replaygain-track-gain"), ("r128_track_gain", "r128-track-gain"))
+    album_gain_db = _find_tag_float(tags, ("replaygain_album_gain", "replaygain-album-gain"), ("r128_album_gain", "r128-album-gain"))
+    track_peak = _normalize_peak(_find_tag_float(tags, ("replaygain_track_peak", "replaygain-track-peak"), ("r128_track_peak", "r128-track-peak")), raw_fmt)
+    album_peak = _normalize_peak(_find_tag_float(tags, ("replaygain_album_peak", "replaygain-album-peak"), ("r128_album_peak", "r128-album-peak")), raw_fmt)
 
     return {
         "title":           tags.get("title"),
@@ -373,6 +411,8 @@ def _probe_metadata(path: str) -> Optional[dict]:
         "bytes_per_sample": bps,
         "track_gain_db":   track_gain_db,
         "album_gain_db":   album_gain_db,
+        "track_peak":      track_peak,
+        "album_peak":      album_peak,
     }
 
 
@@ -411,6 +451,7 @@ class PlayerEngine:
         self._replay_gain: int = 0
         self._replaygain_preamp: float = 0.0
         self._replaygain_default_preamp: float = 0.0
+        self._replaygain_peaking: int = 0
         self._internal_resampler: int = 0
         self._bit_perfect: int = 0
 
@@ -460,6 +501,14 @@ class PlayerEngine:
     @replaygain_default_preamp.setter
     def replaygain_default_preamp(self, value: float) -> None:
         self._replaygain_default_preamp = float(value)
+
+    @property
+    def replaygain_peaking(self) -> int:
+        return self._replaygain_peaking
+
+    @replaygain_peaking.setter
+    def replaygain_peaking(self, mode: int) -> None:
+        self._replaygain_peaking = max(0, min(2, int(mode)))
 
     @property
     def internal_resampler(self) -> int:
@@ -772,24 +821,61 @@ class PlayerEngine:
         if self._replay_gain not in (1, 2):
             return None
         raw_gain = t.track_gain_db if self._replay_gain == 1 else t.album_gain_db
-        if raw_gain is not None:
-            return raw_gain + self._replaygain_preamp
-        return self._replaygain_default_preamp
+        has_rg = (raw_gain is not None)
+        preamp = self._replaygain_preamp if has_rg else self._replaygain_default_preamp
+        gain_db = (raw_gain + preamp) if has_rg else preamp
 
-    def _spawn_ffmpeg_proc(self, t: TrackInfo, seek_pos: float) -> Optional[subprocess.Popen]:
+        # Mode 1: Apply appropriate gain (prevent clipping by lowering gain)
+        if self._replaygain_peaking == 1:
+            peak = t.track_peak if self._replay_gain == 1 else (t.album_peak or t.track_peak)
+            if peak is not None and peak > 0.0:
+                max_allowed_gain = -20.0 * math.log10(peak)
+                if gain_db > max_allowed_gain:
+                    gain_db = max_allowed_gain
+            elif gain_db > 0.0:
+                # If peak is not known, assume full-scale peak 1.0 (0 dBFS) so positive preamp does not clip
+                gain_db = 0.0
+
+        return gain_db
+
+    def _replaygain_should_compress(self, t: TrackInfo, gain_db: Optional[float] = None) -> bool:
+        """Check if dynamic range compression should be applied (peaking mode 2 and clips)."""
+        if self._replay_gain not in (1, 2) or self._replaygain_peaking != 2:
+            return False
+        if gain_db is None:
+            raw_gain = t.track_gain_db if self._replay_gain == 1 else t.album_gain_db
+            has_rg = (raw_gain is not None)
+            preamp = self._replaygain_preamp if has_rg else self._replaygain_default_preamp
+            gain_db = (raw_gain + preamp) if has_rg else preamp
+
+        if gain_db is None:
+            return False
+
+        peak = t.track_peak if self._replay_gain == 1 else (t.album_peak or t.track_peak)
+        if peak is not None and peak > 0.0:
+            output_peak = peak * (10.0 ** (gain_db / 20.0))
+            return output_peak > 1.0
+        # If peak is not known, any positive gain (e.g. from positive preamp or default preamp) can clip
+        return gain_db > 0.0
+
+    def _spawn_ffmpeg_proc(self, t: TrackInfo, seek_pos: float, is_bit_perfect: bool = False) -> Optional[subprocess.Popen]:
         if not shutil.which("ffmpeg"):
             return None
         seek_args = ["-accurate_seek", "-ss", f"{seek_pos:.6f}"] if seek_pos > 0.0 else []
         filters = []
-        rg_db = self._calc_replaygain_db(t)
-        if rg_db is not None:
-            filters.append(f"volume={rg_db:.2f}dB")
 
         effective_fmt = t.ffmpeg_fmt
-        if self._internal_resampler == 1:
-            sink_fmt, sink_rate = get_system_sink_info()
-            effective_fmt = "s16le" if sink_fmt == "s16" else "s32le"
-            filters.append(f"aresample={sink_rate}:resampler=soxr:precision=33:dither_method=triangular")
+        if not is_bit_perfect:
+            rg_db = self._calc_replaygain_db(t)
+            if rg_db is not None:
+                filters.append(f"volume={rg_db:.2f}dB:eval=once:precision=float")
+                if self._replaygain_should_compress(t, rg_db):
+                    filters.append("alimiter=limit=1.0:attack=5:release=50:asc=true")
+
+            if self._internal_resampler == 1:
+                sink_fmt, sink_rate = get_system_sink_info()
+                effective_fmt = "s16le" if sink_fmt == "s16" else "s32le"
+                filters.append(f"aresample={sink_rate}:resampler=soxr:precision=33:dither_method=triangular")
 
         rg_args = ["-af", ",".join(filters)] if filters else []
 
@@ -810,22 +896,31 @@ class PlayerEngine:
         except Exception:
             return None
 
-    def _spawn_gstreamer_proc(self, t: TrackInfo, seek_pos: float) -> Optional[subprocess.Popen]:
+    def _spawn_gstreamer_proc(self, t: TrackInfo, seek_pos: float, is_bit_perfect: bool = False) -> Optional[subprocess.Popen]:
         if not shutil.which("gst-launch-1.0"):
             return None
-        sink_fmt, sink_rate = get_system_sink_info()
-        effective_fmt = sink_fmt if self._internal_resampler == 1 else t.pwcat_fmt
-        effective_rate = sink_rate if self._internal_resampler == 1 else t.sample_rate
+
+        if is_bit_perfect:
+            effective_fmt = t.pwcat_fmt
+            effective_rate = t.sample_rate
+            rg_filter = ""
+        else:
+            sink_fmt, sink_rate = get_system_sink_info()
+            effective_fmt = sink_fmt if self._internal_resampler == 1 else t.pwcat_fmt
+            effective_rate = sink_rate if self._internal_resampler == 1 else t.sample_rate
+
+            rg_filter = ""
+            rg_db = self._calc_replaygain_db(t)
+            if rg_db is not None:
+                vol = 10.0 ** (rg_db / 20.0)
+                rg_filter += f"! audioconvert dithering=tpdf ! volume volume={vol:.6f} ! audioconvert dithering=tpdf "
+                if self._replaygain_should_compress(t, rg_db):
+                    rg_filter += "! audiodynamic characteristics=soft-knee mode=compressor threshold=0.0 ratio=20.0 "
+
+            if self._internal_resampler == 1:
+                rg_filter += f"! audioresample quality=10 ! capsfilter caps=audio/x-raw,rate={effective_rate} ! audioconvert dithering=tpdf "
+
         gst_fmt = _GST_FMT_MAP.get(effective_fmt.lower(), "S16LE")
-
-        rg_filter = ""
-        rg_db = self._calc_replaygain_db(t)
-        if rg_db is not None:
-            vol = 10.0 ** (rg_db / 20.0)
-            rg_filter += f"! audioconvert ! volume volume={vol:.6f} "
-
-        if self._internal_resampler == 1:
-            rg_filter += f"! audioresample quality=10 ! capsfilter caps=audio/x-raw,rate={effective_rate} ! audioconvert dithering=tpdf "
 
         py_code = f'''
 import sys, gi
@@ -856,10 +951,16 @@ except Exception:
                     "gst-launch-1.0", "-q",
                     "filesrc", f"location={t.path}",
                     "!", "decodebin",
+                ]
+                if rg_filter:
+                    for part in rg_filter.strip().split():
+                        if part != "!":
+                            cmd_cli.extend(["!", part])
+                cmd_cli.extend([
                     "!", "audioconvert",
                     "!", f"audio/x-raw,format={gst_fmt},layout=interleaved",
                     "!", "fdsink", "fd=1"
-                ]
+                ])
                 return subprocess.Popen(cmd_cli, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=65536)
             return p
         except Exception:
@@ -910,13 +1011,13 @@ except Exception:
 
         proc = None
         if primary_ffmpeg:
-            proc = self._spawn_ffmpeg_proc(t, self._seek_position)
+            proc = self._spawn_ffmpeg_proc(t, self._seek_position, is_bit_perfect=use_direct_alsa)
             if proc is None:
-                proc = self._spawn_gstreamer_proc(t, self._seek_position)
+                proc = self._spawn_gstreamer_proc(t, self._seek_position, is_bit_perfect=use_direct_alsa)
         else:
-            proc = self._spawn_gstreamer_proc(t, self._seek_position)
+            proc = self._spawn_gstreamer_proc(t, self._seek_position, is_bit_perfect=use_direct_alsa)
             if proc is None:
-                proc = self._spawn_ffmpeg_proc(t, self._seek_position)
+                proc = self._spawn_ffmpeg_proc(t, self._seek_position, is_bit_perfect=use_direct_alsa)
 
         if proc is None:
             send_error_notification(

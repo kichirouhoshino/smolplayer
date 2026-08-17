@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: smolplayer\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-16 22:51+0800\n"
+"POT-Creation-Date: 2026-08-17 12:07+0800\n"
 "PO-Revision-Date: 2026-08-11 13:51+0800\n"
 "Last-Translator: smolplayer contributors\n"
 "Language-Team: Italian\n"
@@ -18,26 +18,26 @@ msgstr ""
 "Chiuso dopo essere stato in pausa per {mins} minuti per risparmiare risorse "
 "di sistema."
 
-#: main.py:173 main.py:178
+#: main.py:174 main.py:179
 #, python-brace-format
 msgid "{app_name} File Error"
 msgstr "Errore file {app_name}"
 
-#: main.py:173
+#: main.py:174
 #, python-brace-format
 msgid "File or folder does not exist: {name}"
 msgstr "Il file o la cartella non esiste: {name}"
 
-#: main.py:178
+#: main.py:179
 #, python-brace-format
 msgid "Unable to find playable audio files for: {name}"
 msgstr "Impossibile trovare file audio riproducibili per: {name}"
 
-#: main.py:196
+#: main.py:197
 msgid "Playback stopped: files or drive are no longer accessible."
 msgstr "Riproduzione interrotta: i file o l'unità non sono più accessibili."
 
-#: main.py:214
+#: main.py:215
 #, python-brace-format
 msgid ""
 "{app_name} runs in the background! Open an audio file in your file manager "
@@ -46,24 +46,24 @@ msgstr ""
 "{app_name} è in esecuzione in background! Apri un file audio nel gestore "
 "file per avviare la riproduzione."
 
-#: player.py:301 player.py:381 player.py:923
+#: player.py:331 player.py:421 player.py:1024
 #, python-brace-format
 msgid "{app_name} Error"
 msgstr "Errore {app_name}"
 
-#: player.py:302
+#: player.py:332
 #, python-brace-format
 msgid "Unable to read audio metadata for {name} with FFmpeg or GStreamer."
 msgstr ""
 "Impossibile leggere i metadati audio per {name} con FFmpeg o GStreamer."
 
-#: player.py:382
+#: player.py:422
 #, python-brace-format
 msgid ""
 "Bit-perfect playback failed for {name}. Falling back to normal playback mode."
 msgstr ""
 
-#: player.py:924
+#: player.py:1025
 #, python-brace-format
 msgid ""
 "Audio decoding failed for {name}. Neither FFmpeg nor GStreamer could process "
@@ -72,12 +72,12 @@ msgstr ""
 "Decodifica audio fallita per {name}. Né FFmpeg né GStreamer sono riusciti a "
 "elaborare il formato."
 
-#: player.py:1005
+#: player.py:1106
 #, python-brace-format
 msgid "Could not start pw-cat: {exc}"
 msgstr "Impossibile avviare pw-cat: {exc}"
 
-#: player.py:1087
+#: player.py:1188
 msgid "Playback stopped: audio system or decoder failed repeatedly."
 msgstr ""
 "Riproduzione interrotta: il sistema audio o il decodificatore hanno fallito "

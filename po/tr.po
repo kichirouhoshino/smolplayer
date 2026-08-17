@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: smolplayer\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-16 22:51+0800\n"
+"POT-Creation-Date: 2026-08-17 12:07+0800\n"
 "PO-Revision-Date: 2026-08-11 13:52+0800\n"
 "Last-Translator: smolplayer contributors\n"
 "Language-Team: Turkish\n"
@@ -18,26 +18,26 @@ msgstr ""
 "Sistem kaynaklarından tasarruf etmek için {mins} dakika duraklatıldıktan "
 "sonra kapatıldı."
 
-#: main.py:173 main.py:178
+#: main.py:174 main.py:179
 #, python-brace-format
 msgid "{app_name} File Error"
 msgstr "{app_name} Dosya Hatası"
 
-#: main.py:173
+#: main.py:174
 #, python-brace-format
 msgid "File or folder does not exist: {name}"
 msgstr "Dosya veya klasör mevcut değil: {name}"
 
-#: main.py:178
+#: main.py:179
 #, python-brace-format
 msgid "Unable to find playable audio files for: {name}"
 msgstr "Oynatılabilir ses dosyası bulunamadı: {name}"
 
-#: main.py:196
+#: main.py:197
 msgid "Playback stopped: files or drive are no longer accessible."
 msgstr "Oynatma durduruldu: dosyalara veya sürücüye artık erişilemiyor."
 
-#: main.py:214
+#: main.py:215
 #, python-brace-format
 msgid ""
 "{app_name} runs in the background! Open an audio file in your file manager "
@@ -46,35 +46,35 @@ msgstr ""
 "{app_name} arka planda çalışıyor! Oynatmayı başlatmak için dosya "
 "yöneticinizde bir ses dosyası açın."
 
-#: player.py:301 player.py:381 player.py:923
+#: player.py:331 player.py:421 player.py:1024
 #, python-brace-format
 msgid "{app_name} Error"
 msgstr "{app_name} Hatası"
 
-#: player.py:302
+#: player.py:332
 #, python-brace-format
 msgid "Unable to read audio metadata for {name} with FFmpeg or GStreamer."
 msgstr "{name} için ses üst verileri okunamadı."
 
-#: player.py:382
+#: player.py:422
 #, python-brace-format
 msgid ""
 "Bit-perfect playback failed for {name}. Falling back to normal playback mode."
 msgstr ""
 
-#: player.py:924
+#: player.py:1025
 #, python-brace-format
 msgid ""
 "Audio decoding failed for {name}. Neither FFmpeg nor GStreamer could process "
 "format."
 msgstr "{name} için ses kod çözme başarısız oldu."
 
-#: player.py:1005
+#: player.py:1106
 #, python-brace-format
 msgid "Could not start pw-cat: {exc}"
 msgstr "pw-cat başlatılamadı: {exc}"
 
-#: player.py:1087
+#: player.py:1188
 msgid "Playback stopped: audio system or decoder failed repeatedly."
 msgstr "Oynatma durduruldu: ses sistemi veya kod çözücü üst üste hata verdi."
 

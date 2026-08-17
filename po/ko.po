@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: smolplayer\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-16 22:51+0800\n"
+"POT-Creation-Date: 2026-08-17 12:07+0800\n"
 "PO-Revision-Date: 2026-08-11 13:52+0800\n"
 "Last-Translator: smolplayer contributors\n"
 "Language-Team: Korean\n"
@@ -17,27 +17,27 @@ msgid "Closed after being paused for {mins} minutes to save system resources."
 msgstr ""
 "시스템 자원을 절약하기 위해 {mins}분 동안 일시 중지된 후 종료되었습니다."
 
-#: main.py:173 main.py:178
+#: main.py:174 main.py:179
 #, python-brace-format
 msgid "{app_name} File Error"
 msgstr "{app_name} 파일 오류"
 
-#: main.py:173
+#: main.py:174
 #, python-brace-format
 msgid "File or folder does not exist: {name}"
 msgstr "파일 또는 폴더가 존재하지 않습니다: {name}"
 
-#: main.py:178
+#: main.py:179
 #, python-brace-format
 msgid "Unable to find playable audio files for: {name}"
 msgstr "재생 가능한 오디오 파일을 찾을 수 없습니다: {name}"
 
-#: main.py:196
+#: main.py:197
 msgid "Playback stopped: files or drive are no longer accessible."
 msgstr ""
 "재생이 중지되었습니다: 파일 또는 드라이브에 더 이상 접근할 수 없습니다."
 
-#: main.py:214
+#: main.py:215
 #, python-brace-format
 msgid ""
 "{app_name} runs in the background! Open an audio file in your file manager "
@@ -46,35 +46,35 @@ msgstr ""
 "{app_name}이(가) 백그라운드에서 실행 중입니다! 파일 관리자에서 오디오 파일을 "
 "열어 재생을 시작하세요."
 
-#: player.py:301 player.py:381 player.py:923
+#: player.py:331 player.py:421 player.py:1024
 #, python-brace-format
 msgid "{app_name} Error"
 msgstr "{app_name} 오류"
 
-#: player.py:302
+#: player.py:332
 #, python-brace-format
 msgid "Unable to read audio metadata for {name} with FFmpeg or GStreamer."
 msgstr "FFmpeg 또는 GStreamer로 {name}의 메타데이터를 읽을 수 없습니다."
 
-#: player.py:382
+#: player.py:422
 #, python-brace-format
 msgid ""
 "Bit-perfect playback failed for {name}. Falling back to normal playback mode."
 msgstr ""
 
-#: player.py:924
+#: player.py:1025
 #, python-brace-format
 msgid ""
 "Audio decoding failed for {name}. Neither FFmpeg nor GStreamer could process "
 "format."
 msgstr "{name}의 오디오 디코딩에 실패했습니다."
 
-#: player.py:1005
+#: player.py:1106
 #, python-brace-format
 msgid "Could not start pw-cat: {exc}"
 msgstr "pw-cat을 시작할 수 없습니다: {exc}"
 
-#: player.py:1087
+#: player.py:1188
 msgid "Playback stopped: audio system or decoder failed repeatedly."
 msgstr ""
 "재생이 중지되었습니다: 오디오 시스템 또는 디코더 오류가 반복 발생했습니다."
