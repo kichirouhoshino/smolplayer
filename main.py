@@ -149,10 +149,13 @@ def main() -> None:
     engine.on_volume_change = handle_volume_change
     playlist.on_toggles_changed = handle_toggles_change
 
-    def play_track(track_path: Optional[str]) -> bool:
-        if not track_path or not os.path.isfile(track_path):
+    def play_track(track_target: Optional[Union[str, TrackInfo]]) -> bool:
+        if not track_target:
             return False
-        info = engine.load(track_path)
+        file_path = track_target.path if hasattr(track_target, "path") else track_target
+        if not isinstance(file_path, str) or not os.path.isfile(file_path):
+            return False
+        info = engine.load(track_target)
         engine.play()
         if mpris:
             mpris.notify_track(info, playlist.current_index)

@@ -16,7 +16,7 @@ import subprocess
 import sys
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 from utils import write_cover_art, send_error_notification
@@ -69,6 +69,37 @@ _FMT_MAP: dict[str, tuple[str, str, int]] = {
 }
 _DEFAULT_FMT: tuple[str, str, int] = (DEFAULT_FFMPEG_FMT, DEFAULT_SAMPLE_FMT, 2)
 
+LOSSY_EXTS: set[str] = {
+    ".mp3", ".aac", ".ogg", ".opus", ".wma", ".mpc", ".spx", ".ra", ".ram", ".mp2", ".mp1",
+}
+LOSSY_CODECS: set[str] = {
+    "mp3", "mp3float", "aac", "aac_latm", "vorbis", "opus", "wmav1", "wmav2", "wmavoice", "wmapro",
+    "mpc", "mpc7", "mpc8", "musepack", "speex", "ac3", "eac3", "dca", "dts", "cook", "ra_144", "ra_288",
+    "atrac1", "atrac3", "atrac3p", "atrac9", "twinvq", "nellymoser", "siren", "amrnb", "amrwb", "gsm",
+    "mp2", "mp1",
+}
+LOSSLESS_CODECS: set[str] = {
+    "flac", "alac", "wavpack", "ape", "monkeysaudio", "shorten", "tta", "tak", "mlp", "truehd",
+}
+
+
+def is_lossy_source(path: str, codec_name: Optional[str] = None, sample_fmt: Optional[str] = None) -> bool:
+    """Determine whether an audio track is from a lossy source."""
+    if codec_name:
+        c = codec_name.lower()
+        if c in LOSSY_CODECS:
+            return True
+        if c in LOSSLESS_CODECS or c.startswith("pcm_") or c.startswith("dsd_"):
+            return False
+    ext = os.path.splitext(path)[1].lower()
+    if ext in LOSSY_EXTS:
+        return True
+    if ext in {".flac", ".ape", ".tta", ".shn", ".wav", ".aiff", ".aif", ".wv"}:
+        return False
+    if sample_fmt and sample_fmt.lower() in ("flt", "fltp", "dbl", "dblp"):
+        return True
+    return False
+
 
 @dataclass
 class TrackInfo:
@@ -88,10 +119,15 @@ class TrackInfo:
     album_gain_db: Optional[float] = None
     track_peak: Optional[float] = None
     album_peak: Optional[float] = None
+    start_time: float = 0.0
+    end_time: Optional[float] = None
+    track_number: Optional[int] = None
+    disc_number: Optional[int] = None
+    cue_path: Optional[str] = None
 
 
 def extract_cover(path: str) -> Optional[bytes]:
-    """Extract embedded cover art via ffmpeg."""
+    """Extract embedded cover art via ffmpeg or fallback to folder artwork."""
     if path.startswith(("http://", "https://")):
         return None
     try:
@@ -100,9 +136,31 @@ def extract_cover(path: str) -> Optional[bytes]:
              "-map", "0:v:0", "-vframes", "1", "-f", "image2", "pipe:1"],
             capture_output=True, timeout=10,
         )
-        return res.stdout if res.returncode == 0 and res.stdout else None
+        if res.returncode == 0 and res.stdout:
+            return res.stdout
     except Exception:
-        return None
+        pass
+
+    try:
+        folder = os.path.dirname(path)
+        if folder and os.path.isdir(folder):
+            cover_names = (
+                "cover.jpg", "cover.png", "cover.jpeg", "cover.webp",
+                "folder.jpg", "folder.png", "folder.jpeg", "folder.webp",
+                "front.jpg", "front.png", "front.jpeg", "front.webp",
+                "album.jpg", "album.png", "album.jpeg", "album.webp",
+                "artwork.jpg", "artwork.png", "artwork.jpeg", "artwork.webp",
+            )
+            with os.scandir(folder) as entries:
+                existing = {e.name.lower(): e.path for e in entries if e.is_file()}
+            for name in cover_names:
+                if name in existing:
+                    with open(existing[name], "rb") as f:
+                        return f.read()
+    except Exception:
+        pass
+
+    return None
 
 
 def _get_pactl_output() -> tuple[Optional[str], Optional[str]]:
@@ -194,6 +252,204 @@ _APLAY_FMT_MAP: dict[str, str] = {
 }
 
 
+@dataclass
+class DacCapabilities:
+    formats: set[str] = field(default_factory=set)
+    sample_rates: set[int] = field(default_factory=set)
+    min_rate: Optional[int] = None
+    max_rate: Optional[int] = None
+    max_channels: int = 2
+
+
+def parse_proc_asound_stream(content: str) -> DacCapabilities:
+    """Parse ALSA USB Audio Class stream descriptor (/proc/asound/cardX/stream0)."""
+    caps = DacCapabilities()
+    in_playback = False
+    for line in content.splitlines():
+        line_s = line.strip()
+        if line_s.startswith("Playback:"):
+            in_playback = True
+            continue
+        elif line_s.startswith("Capture:"):
+            in_playback = False
+            continue
+
+        if not in_playback:
+            continue
+
+        m_fmt = re.search(r"Format:\s*(\S+)", line_s)
+        if m_fmt:
+            raw_f = m_fmt.group(1).strip()
+            if raw_f.upper() != "SPECIAL":
+                caps.formats.add(raw_f.upper())
+            elif "DSD" in line_s.upper():
+                caps.formats.add("DSD")
+
+        m_ch = re.search(r"Channels:\s*(\d+)", line_s)
+        if m_ch:
+            caps.max_channels = max(caps.max_channels, int(m_ch.group(1)))
+
+        if line_s.startswith("Rates:"):
+            rates_body = line_s.split("Rates:", 1)[1]
+            m_range = re.search(r"(\d{4,7})\s*-\s*(\d{4,7})", rates_body)
+            if m_range:
+                r_min, r_max = int(m_range.group(1)), int(m_range.group(2))
+                caps.min_rate = min(caps.min_rate, r_min) if caps.min_rate else r_min
+                caps.max_rate = max(caps.max_rate, r_max) if caps.max_rate else r_max
+            for num_match in re.finditer(r"\b(\d{4,7})\b", rates_body):
+                r = int(num_match.group(1))
+                if 8000 <= r <= 1536000:
+                    caps.sample_rates.add(r)
+
+    if caps.sample_rates:
+        if caps.min_rate is None:
+            caps.min_rate = min(caps.sample_rates)
+        if caps.max_rate is None:
+            caps.max_rate = max(caps.sample_rates)
+    return caps
+
+
+def parse_proc_asound_codec(content: str) -> DacCapabilities:
+    """Parse HDA Intel/Realtek codec descriptor (/proc/asound/cardX/codec#*)."""
+    caps = DacCapabilities()
+    has_pcm = False
+    for line in content.splitlines():
+        line_s = line.strip()
+        if "rates [" in line_s:
+            parts = line_s.split("]:", 1)[-1]
+            for num in re.findall(r"\b(\d{4,7})\b", parts):
+                r = int(num)
+                if 8000 <= r <= 1536000:
+                    caps.sample_rates.add(r)
+        elif "bits [" in line_s:
+            parts = line_s.split("]:", 1)[-1]
+            bit_nums = [int(b) for b in re.findall(r"\b(\d+)\b", parts)]
+            if 16 in bit_nums:
+                caps.formats.add("S16_LE")
+            if any(b in bit_nums for b in (20, 24, 32)):
+                caps.formats.update({"S32_LE", "S24_3LE", "S24_LE"})
+        elif "formats [" in line_s and "PCM" in line_s:
+            has_pcm = True
+
+    if has_pcm and not caps.formats:
+        caps.formats.update({"S16_LE", "S32_LE"})
+
+    if caps.sample_rates:
+        caps.min_rate = min(caps.sample_rates)
+        caps.max_rate = max(caps.sample_rates)
+    return caps
+
+
+def _find_proc_asound_card_dir(card_spec: str) -> Optional[str]:
+    """Resolve card identifier (number or name) to /proc/asound/cardX path."""
+    if not card_spec:
+        return None
+    direct = f"/proc/asound/card{card_spec}"
+    if os.path.isdir(direct):
+        return direct
+    by_name = f"/proc/asound/{card_spec}"
+    if os.path.isdir(by_name):
+        return by_name
+    cards_file = "/proc/asound/cards"
+    if os.path.isfile(cards_file):
+        try:
+            with open(cards_file, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    m = re.search(r"^\s*(\d+)\s+\[([^\]]+)\]", line)
+                    if m:
+                        idx, name = m.group(1), m.group(2).strip()
+                        if card_spec in (idx, name):
+                            target = f"/proc/asound/card{idx}"
+                            if os.path.isdir(target):
+                                return target
+        except OSError:
+            pass
+    return None
+
+
+def get_dac_hardware_capabilities(alsa_dev: str) -> Optional[DacCapabilities]:
+    """Query hardware capabilities of the ALSA sound card/DAC from /proc/asound."""
+    m = re.search(r"(?:hw:|plughw:)(?:CARD=)?([^,]+)", alsa_dev)
+    if not m:
+        return None
+    card_spec = m.group(1).strip()
+    card_dir = _find_proc_asound_card_dir(card_spec)
+    if not card_dir or not os.path.isdir(card_dir):
+        return None
+
+    # Check USB stream descriptors
+    try:
+        for entry in os.listdir(card_dir):
+            if entry.startswith("stream"):
+                stream_path = os.path.join(card_dir, entry)
+                if os.path.isfile(stream_path):
+                    with open(stream_path, "r", encoding="utf-8", errors="ignore") as f:
+                        caps = parse_proc_asound_stream(f.read())
+                        if caps.formats or caps.sample_rates:
+                            return caps
+    except OSError:
+        pass
+
+    # Check HDA / codec descriptors
+    try:
+        for entry in os.listdir(card_dir):
+            if entry.startswith("codec#"):
+                codec_path = os.path.join(card_dir, entry)
+                if os.path.isfile(codec_path):
+                    with open(codec_path, "r", encoding="utf-8", errors="ignore") as f:
+                        caps = parse_proc_asound_codec(f.read())
+                        if caps.formats or caps.sample_rates:
+                            return caps
+    except OSError:
+        pass
+
+    return None
+
+
+def check_dac_supports_track(alsa_dev: str, track: TrackInfo) -> tuple[bool, Optional[str]]:
+    """
+    Validate whether the DAC hardware natively supports the track's sample rate, format, and channels.
+    Returns (True, None) if supported, or (False, error_reason) if unsupported.
+    """
+    caps = get_dac_hardware_capabilities(alsa_dev)
+    if caps is None:
+        return True, None
+
+    # 1. Channels check
+    if track.channels > caps.max_channels:
+        return False, _("Track has {ch} channels, but DAC hardware only supports up to {max_ch} channels").format(
+            ch=track.channels, max_ch=caps.max_channels
+        )
+
+    # 2. Sample rate check
+    if caps.sample_rates or (caps.min_rate and caps.max_rate):
+        if caps.sample_rates and track.sample_rate not in caps.sample_rates:
+            if caps.min_rate and caps.max_rate and (caps.min_rate <= track.sample_rate <= caps.max_rate):
+                pass  # Supported continuous range
+            else:
+                supp_str = ", ".join(f"{r}Hz" for r in sorted(caps.sample_rates))
+                return False, _("Sample rate {rate}Hz is not supported by DAC (supported: {supp})").format(
+                    rate=track.sample_rate, supp=supp_str
+                )
+        elif caps.min_rate and caps.max_rate and not (caps.min_rate <= track.sample_rate <= caps.max_rate):
+            return False, _("Sample rate {rate}Hz is outside DAC hardware range ({min_r}-{max_r}Hz)").format(
+                rate=track.sample_rate, min_r=caps.min_rate, max_r=caps.max_rate
+            )
+
+    # 3. Format check
+    aplay_fmt = _APLAY_FMT_MAP.get(track.pwcat_fmt.lower())
+    if aplay_fmt and caps.formats:
+        int_fmts = {"S16_LE", "S24_3LE", "S24_LE", "S32_LE"}
+        if aplay_fmt == "FLOAT_LE" and "FLOAT_LE" not in caps.formats:
+            return False, _("32-bit floating point audio is not supported by DAC in direct ALSA mode")
+        if aplay_fmt in int_fmts and not (caps.formats & int_fmts):
+            return False, _("Integer PCM format {fmt} is not supported by DAC").format(fmt=aplay_fmt)
+        if aplay_fmt not in int_fmts and aplay_fmt not in caps.formats:
+            return False, _("Sample format {fmt} is not supported by DAC").format(fmt=aplay_fmt)
+
+    return True, None
+
+
 def _normalize_peak(val: Optional[float], sample_fmt: str = "s16") -> Optional[float]:
     """Normalize peak value to 0.0-1.0 float range, handling legacy integer peak tags (8-bit, 16-bit, 24-bit, 32-bit)."""
     if val is None or val <= 0.0:
@@ -211,6 +467,23 @@ def _normalize_peak(val: Optional[float], sample_fmt: str = "s16") -> Optional[f
         elif val <= 2147483648.0:
             return val / 2147483648.0
     return val
+
+
+def _find_tag_float(tag_dict: dict, primary_keys: tuple[str, ...], fallback_keys: tuple[str, ...] = ()) -> Optional[float]:
+    """Find and parse floating point tag value from dictionary matching given keys."""
+    for k, v in tag_dict.items():
+        k_lower = str(k).lower()
+        if any(pk.lower() in k_lower for pk in primary_keys):
+            m = re.search(r"([-+]?\d+(?:\.\d+)?)", str(v))
+            if m:
+                return float(m.group(1))
+    for k, v in tag_dict.items():
+        k_lower = str(k).lower()
+        if any(fk.lower() in k_lower for fk in fallback_keys):
+            m = re.search(r"([-+]?\d+(?:\.\d+)?)", str(v))
+            if m:
+                return float(m.group(1))
+    return None
 
 
 def _probe_metadata_gstreamer(path: str) -> Optional[dict]:
@@ -245,7 +518,12 @@ def _probe_metadata_gstreamer(path: str) -> Optional[dict]:
         else:
             raw_fmt = "s16"
 
-        ffmpeg_fmt, pwcat_fmt, bps = _FMT_MAP.get(raw_fmt, _DEFAULT_FMT)
+        cfg = get_config()
+        if cfg.lossy_bps == 1 and is_lossy_source(path, sample_fmt=raw_fmt):
+            raw_fmt = "s16"
+            ffmpeg_fmt, pwcat_fmt, bps = ("s16le", "s16", 2)
+        else:
+            ffmpeg_fmt, pwcat_fmt, bps = _FMT_MAP.get(raw_fmt, _DEFAULT_FMT)
 
         tags = info.get_tags()
         title = None
@@ -377,21 +655,14 @@ def _probe_metadata(path: str) -> Optional[dict]:
     tags = {k.lower(): v for k, v in fmt.get("tags", {}).items()}
     tags.update({k.lower(): v for k, v in astream.get("tags", {}).items()})
 
-    def _find_tag_float(tag_dict: dict, primary_keys: tuple[str, ...], fallback_keys: tuple[str, ...]) -> Optional[float]:
-        for k, v in tag_dict.items():
-            if any(pk in k for pk in primary_keys):
-                m = re.search(r"([-+]?\d+(?:\.\d+)?)", str(v))
-                if m:
-                    return float(m.group(1))
-        for k, v in tag_dict.items():
-            if any(fk in k for fk in fallback_keys):
-                m = re.search(r"([-+]?\d+(?:\.\d+)?)", str(v))
-                if m:
-                    return float(m.group(1))
-        return None
-
+    codec_name = astream.get("codec_name")
     raw_fmt = astream.get("sample_fmt", "s16")
-    ffmpeg_fmt, pwcat_fmt, bps = _FMT_MAP.get(raw_fmt, _DEFAULT_FMT)
+    cfg = get_config()
+    if cfg.lossy_bps == 1 and is_lossy_source(path, codec_name=codec_name, sample_fmt=raw_fmt):
+        ffmpeg_fmt, pwcat_fmt, bps = ("s16le", "s16", 2)
+        raw_fmt = "s16"
+    else:
+        ffmpeg_fmt, pwcat_fmt, bps = _FMT_MAP.get(raw_fmt, _DEFAULT_FMT)
 
     track_gain_db = _find_tag_float(tags, ("replaygain_track_gain", "replaygain-track-gain"), ("r128_track_gain", "r128-track-gain"))
     album_gain_db = _find_tag_float(tags, ("replaygain_album_gain", "replaygain-album-gain"), ("r128_album_gain", "r128-album-gain"))
@@ -416,10 +687,16 @@ def _probe_metadata(path: str) -> Optional[dict]:
     }
 
 
-def _send_bit_perfect_failure_notification(track_name: str) -> None:
+def _send_bit_perfect_failure_notification(track_name: str, reason: Optional[str] = None) -> None:
+    if reason:
+        msg = _("Bit-perfect playback failed for {name}:\n{reason}\nFalling back to normal playback mode.").format(
+            name=track_name, reason=reason
+        )
+    else:
+        msg = _("Bit-perfect playback failed for {name}. Falling back to normal playback mode.").format(name=track_name)
     send_error_notification(
-        _("{app_name} Error").format(app_name=APP_NAME),
-        _("Bit-perfect playback failed for {name}. Falling back to normal playback mode.").format(name=track_name)
+        _("{app_name} Bit-Perfect Warning").format(app_name=APP_NAME),
+        msg,
     )
 
 
@@ -454,6 +731,7 @@ class PlayerEngine:
         self._replaygain_peaking: int = 0
         self._internal_resampler: int = 0
         self._bit_perfect: int = 0
+        self._lossy_bps: int = 0
 
         # Callbacks
         self.on_state_change:    Optional[Callable[[str], None]] = None
@@ -533,6 +811,14 @@ class PlayerEngine:
     @bit_perfect.setter
     def bit_perfect(self, mode: int) -> None:
         self._bit_perfect = int(mode)
+
+    @property
+    def lossy_bps(self) -> int:
+        return self._lossy_bps
+
+    @lossy_bps.setter
+    def lossy_bps(self, mode: int) -> None:
+        self._lossy_bps = int(mode)
 
     @property
     def position(self) -> float:
@@ -634,9 +920,67 @@ class PlayerEngine:
 
     # ----------------------------------------------------------------- public
 
-    def load(self, path: str) -> TrackInfo:
+    def _prepare_track_info(self, info: TrackInfo) -> TrackInfo:
+        """Ensure audio stream properties and duration are probed for pre-constructed TrackInfo."""
+        base_info = probe_track(info.path)
+        sample_rate = base_info.sample_rate
+        channels = base_info.channels
+        sample_fmt = base_info.sample_fmt
+        ffmpeg_fmt = base_info.ffmpeg_fmt
+        pwcat_fmt = base_info.pwcat_fmt
+        bytes_per_sample = base_info.bytes_per_sample
+
+        track_gain_db = info.track_gain_db if info.track_gain_db is not None else base_info.track_gain_db
+        album_gain_db = info.album_gain_db if info.album_gain_db is not None else base_info.album_gain_db
+        track_peak = info.track_peak if info.track_peak is not None else base_info.track_peak
+        album_peak = info.album_peak if info.album_peak is not None else base_info.album_peak
+
+        start_time = max(0.0, info.start_time)
+        end_time = info.end_time
+        if end_time is not None:
+            duration = max(0.0, end_time - start_time)
+        elif info.duration > 0.0:
+            duration = info.duration
+            end_time = start_time + duration
+        else:
+            duration = max(0.0, base_info.duration - start_time)
+            end_time = base_info.duration
+
+        title = info.title or base_info.title or os.path.basename(info.path)
+        artist = info.artist or base_info.artist
+        album = info.album or base_info.album
+
+        return TrackInfo(
+            path=info.path,
+            title=title,
+            artist=artist,
+            album=album,
+            duration=duration,
+            sample_rate=sample_rate,
+            channels=channels,
+            sample_fmt=sample_fmt,
+            ffmpeg_fmt=ffmpeg_fmt,
+            pwcat_fmt=pwcat_fmt,
+            bytes_per_sample=bytes_per_sample,
+            cover_url=info.cover_url or base_info.cover_url,
+            track_gain_db=track_gain_db,
+            album_gain_db=album_gain_db,
+            track_peak=track_peak,
+            album_peak=album_peak,
+            start_time=start_time,
+            end_time=end_time,
+            track_number=info.track_number,
+            disc_number=info.disc_number,
+            cue_path=info.cue_path,
+        )
+
+    def load(self, target: str | TrackInfo) -> TrackInfo:
         """Probe track first, then stop pipeline cleanly."""
-        info = probe_track(path)
+        if isinstance(target, TrackInfo):
+            info = self._prepare_track_info(target)
+        else:
+            info = probe_track(target)
+
         target_fmt = (info.pwcat_fmt, info.sample_rate, info.channels)
         keep = (self._pwcat is not None and self._pwcat.poll() is None and self._pwcat_fmt == target_fmt)
         self._stop_pipeline(keep_pwcat=keep)
@@ -861,7 +1205,12 @@ class PlayerEngine:
     def _spawn_ffmpeg_proc(self, t: TrackInfo, seek_pos: float, is_bit_perfect: bool = False) -> Optional[subprocess.Popen]:
         if not shutil.which("ffmpeg"):
             return None
-        seek_args = ["-accurate_seek", "-ss", f"{seek_pos:.6f}"] if seek_pos > 0.0 else []
+        effective_seek = t.start_time + seek_pos
+        seek_args = ["-accurate_seek", "-ss", f"{effective_seek:.6f}"] if effective_seek > 0.0 else []
+        if (t.end_time is not None or t.start_time > 0.0) and t.duration > 0.0:
+            remaining = max(0.0, t.duration - seek_pos)
+            seek_args.extend(["-t", f"{remaining:.6f}"])
+
         filters = []
 
         effective_fmt = t.ffmpeg_fmt
@@ -921,6 +1270,10 @@ class PlayerEngine:
                 rg_filter += f"! audioresample quality=10 ! capsfilter caps=audio/x-raw,rate={effective_rate} ! audioconvert dithering=tpdf "
 
         gst_fmt = _GST_FMT_MAP.get(effective_fmt.lower(), "S16LE")
+        effective_seek = t.start_time + seek_pos
+        has_stop = ((t.end_time is not None or t.start_time > 0.0) and t.duration > 0.0)
+        stop_nanos = int((t.start_time + t.duration) * 1e9) if has_stop else -1
+        start_nanos = int(effective_seek * 1e9)
 
         py_code = f'''
 import sys, gi
@@ -931,8 +1284,10 @@ try:
     p = Gst.parse_launch('filesrc location="{t.path}" ! decodebin {rg_filter} ! audioconvert ! audio/x-raw,format={gst_fmt},layout=interleaved ! fdsink sync=false fd=1')
     p.set_state(Gst.State.PAUSED)
     p.get_state(Gst.CLOCK_TIME_NONE)
-    if {seek_pos} > 0.0:
-        p.seek_simple(Gst.Format.TIME, Gst.SeekFlags.FLUSH | Gst.SeekFlags.ACCURATE, int({seek_pos} * 1e9))
+    if {has_stop}:
+        p.seek(1.0, Gst.Format.TIME, Gst.SeekFlags.FLUSH | Gst.SeekFlags.ACCURATE, Gst.SeekType.SET, int({effective_seek} * 1e9), Gst.SeekType.SET, int(({t.start_time} + {t.duration}) * 1e9))
+    elif {effective_seek} > 0.0:
+        p.seek_simple(Gst.Format.TIME, Gst.SeekFlags.FLUSH | Gst.SeekFlags.ACCURATE, int({effective_seek} * 1e9))
     p.set_state(Gst.State.PLAYING)
     bus = p.get_bus()
     bus.timed_pop_filtered(Gst.CLOCK_TIME_NONE, Gst.MessageType.ERROR | Gst.MessageType.EOS)
@@ -973,6 +1328,11 @@ except Exception:
 
         if use_direct_alsa:
             alsa_dev = get_alsa_hw_device()
+            supported, reason = check_dac_supports_track(alsa_dev, t)
+            if not supported:
+                _send_bit_perfect_failure_notification(os.path.basename(t.path), reason=reason)
+                return self._launch_pipeline(force_normal_mode=True)
+
             aplay_fmt = _APLAY_FMT_MAP.get(t.pwcat_fmt.lower(), "S16_LE")
             target_fmt = ("alsa", alsa_dev, aplay_fmt, t.sample_rate, t.channels)
             effective_fmt = t.pwcat_fmt
@@ -1039,7 +1399,7 @@ except Exception:
                     if self._ffmpeg:
                         self._ffmpeg.kill()
                         self._ffmpeg = None
-                    _send_bit_perfect_failure_notification(os.path.basename(t.path))
+                    _send_bit_perfect_failure_notification(os.path.basename(t.path), reason=_("aplay command not found"))
                     return self._launch_pipeline(force_normal_mode=True)
 
                 alsa_cmd = [
@@ -1057,19 +1417,23 @@ except Exception:
                 try:
                     self._pwcat = subprocess.Popen(
                         alsa_cmd, stdin=subprocess.PIPE,
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, bufsize=65536,
+                        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, bufsize=65536,
                     )
                     self._pwcat_fmt = target_fmt
                     time.sleep(0.05)
                     if self._pwcat.poll() is not None and self._pwcat.returncode != 0:
-                        raise RuntimeError("aplay exited with return code " + str(self._pwcat.returncode))
-                except Exception:
+                        err_msg = ""
+                        if self._pwcat.stderr:
+                            err_bytes = self._pwcat.stderr.read()
+                            err_msg = err_bytes.decode("utf-8", errors="replace").strip()
+                        raise RuntimeError(err_msg or f"aplay exited with return code {self._pwcat.returncode}")
+                except Exception as exc:
                     if self._ffmpeg:
                         self._ffmpeg.kill()
                         self._ffmpeg = None
                     self._pwcat = None
                     self._pwcat_fmt = None
-                    _send_bit_perfect_failure_notification(os.path.basename(t.path))
+                    _send_bit_perfect_failure_notification(os.path.basename(t.path), reason=str(exc))
                     return self._launch_pipeline(force_normal_mode=True)
             else:
                 pwcat_cmd = [
@@ -1159,14 +1523,14 @@ except Exception:
                     last_pos_update = now
                     if self.on_position_update and not stop_evt.is_set():
                         self.on_position_update(self.position)
-        except (BrokenPipeError, OSError, ValueError):
+        except (BrokenPipeError, OSError, ValueError) as exc:
             with self._lock:
                 is_current = (self._pipeline_generation == gen) and not stop_evt.is_set()
                 was_bit_perfect = (self._bit_perfect == 1)
                 track_name = os.path.basename(self._track.path) if self._track else ""
 
-            if is_current and was_bit_perfect and self._bytes_written == 0:
-                _send_bit_perfect_failure_notification(track_name)
+            if is_current and was_bit_perfect and self._bytes_written < 131072:
+                _send_bit_perfect_failure_notification(track_name, reason=str(exc) if str(exc) else None)
                 self._launch_pipeline(force_normal_mode=True)
                 return
         finally:

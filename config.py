@@ -130,6 +130,29 @@ _OPTION_BLOCKS: dict[str, str] = {
         "# Default is 0\n"
         "bit_perfect = 0\n"
     ),
+    "cue_noshuffle": (
+        "\n# Set whether to force shuffle off for cue files.\n"
+        "# You can still enable shuffle afterwards.\n"
+        "# 0 - false\n"
+        "# 1 - true\n"
+        "# Default is 1\n"
+        "cue_noshuffle = 1\n"
+    ),
+    "cue_order": (
+        "\n# Set if the song order setting is also use for cue and playlist files.\n"
+        "# 0 - false\n"
+        "# 1 - true\n"
+        "# Default is 0\n"
+        "cue_order = 0\n"
+    ),
+    "lossy_bps": (
+        "\n# Set what bits per sample is used for lossy sources.\n"
+        "# You may want to have this set to 1 when using bit-perfect playback\n"
+        "# 0 - default (usually 32bit float)\n"
+        "# 1 - 16 bit\n"
+        "# Default is 0\n"
+        "lossy_bps = 0\n"
+    ),
 }
 
 DEFAULT_CONFIG_TEXT = DEFAULT_CONFIG_HEADER + "".join(_OPTION_BLOCKS.values())
@@ -151,6 +174,9 @@ class Config:
     replaygain_peaking: int = 0
     internal_resampler: int = 0
     bit_perfect: int = 0
+    cue_noshuffle: int = 1
+    cue_order: int = 0
+    lossy_bps: int = 0
 
     @property
     def audiophile_mode(self) -> int:
@@ -212,6 +238,9 @@ def get_config() -> Config:
             else:
                 cfg.internal_resampler = sec.getint("audiophile_mode", 0)
             cfg.bit_perfect = sec.getint("bit_perfect", 0)
+            cfg.cue_noshuffle = sec.getint("cue_noshuffle", 1)
+            cfg.cue_order = sec.getint("cue_order", 0)
+            cfg.lossy_bps = sec.getint("lossy_bps", 0)
     except Exception:
         pass
 

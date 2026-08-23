@@ -169,11 +169,16 @@ if _DBUS_OK:
                 meta["xesam:artist"] = dbus.Array([info.artist], signature="s")
             if info.album:
                 meta["xesam:album"] = dbus.String(info.album)
+            if info.track_number is not None:
+                meta["xesam:trackNumber"] = dbus.Int32(info.track_number)
+            if info.disc_number is not None:
+                meta["xesam:discNumber"] = dbus.Int32(info.disc_number)
 
-            if info.path.startswith("/"):
-                meta["xesam:url"] = dbus.String(f"file://{info.path}")
-            elif info.path.startswith("file://"):
-                meta["xesam:url"] = dbus.String(info.path)
+            track_url = info.cue_path or info.path
+            if track_url.startswith("/"):
+                meta["xesam:url"] = dbus.String(f"file://{track_url}")
+            elif track_url.startswith("file://"):
+                meta["xesam:url"] = dbus.String(track_url)
 
             if info.cover_url:
                 meta["mpris:artUrl"] = dbus.String(info.cover_url)
@@ -199,7 +204,11 @@ if _DBUS_OK:
                     "DesktopEntry": dbus.String(APP_ID),
                     "SupportedUriSchemes": dbus.Array(["file"], signature="s"),
                     "SupportedMimeTypes": dbus.Array(
-                        ["audio/mpeg", "audio/flac", "audio/ogg", "audio/wav", "audio/mp4"],
+                        [
+                            "audio/mpeg", "audio/flac", "audio/ogg", "audio/wav", "audio/mp4",
+                            "audio/x-matroska", "audio/aac", "audio/x-scpls", "audio/x-mpegurl",
+                            "audio/mpegurl", "application/x-cue", "application/xspf+xml"
+                        ],
                         signature="s",
                     ),
                 }
@@ -275,7 +284,8 @@ if _DBUS_OK:
                 if not nxt:
                     break
                 attempts += 1
-                if os.path.isfile(nxt):
+                file_p = nxt.path if hasattr(nxt, "path") else nxt
+                if isinstance(file_p, str) and (os.path.isfile(file_p) or file_p.startswith(("http://", "https://"))):
                     info = self._engine.load(nxt)
                     self._engine.play()
                     self.notify_track(info, self._playlist.current_index)
@@ -300,7 +310,8 @@ if _DBUS_OK:
                 if not prev:
                     break
                 attempts += 1
-                if os.path.isfile(prev):
+                file_p = prev.path if hasattr(prev, "path") else prev
+                if isinstance(file_p, str) and (os.path.isfile(file_p) or file_p.startswith(("http://", "https://"))):
                     info = self._engine.load(prev)
                     self._engine.play()
                     self.notify_track(info, self._playlist.current_index)

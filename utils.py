@@ -24,6 +24,39 @@ AUDIO_EXTS = {
     ".mka", ".dff", ".dsf", ".mpc", ".ra", ".spx", ".wv", ".tta", ".shn"
 }
 
+PLAYLIST_EXTS = {
+    ".m3u", ".m3u8", ".pls", ".cue", ".xspf"
+}
+
+CUE_EXTS = {
+    ".cue"
+}
+
+
+def is_audio_file(filename_or_path: str) -> bool:
+    """Check if filename/path has a supported audio extension and is not hidden."""
+    base = os.path.basename(filename_or_path)
+    if base.startswith('.'):
+        return False
+    return os.path.splitext(base)[1].lower() in AUDIO_EXTS
+
+
+def is_playlist_file(filename_or_path: str) -> bool:
+    """Check if filename/path is a supported playlist or cue file and is not hidden."""
+    base = os.path.basename(filename_or_path)
+    if base.startswith('.'):
+        return False
+    return os.path.splitext(base)[1].lower() in PLAYLIST_EXTS
+
+
+def is_cue_file(filename_or_path: str) -> bool:
+    """Check if filename/path is a CUE sheet and is not hidden."""
+    base = os.path.basename(filename_or_path)
+    if base.startswith('.'):
+        return False
+    return os.path.splitext(base)[1].lower() in CUE_EXTS
+
+
 _COVER_TMPDIR = os.path.join(
     os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "app", APP_ID
 )
