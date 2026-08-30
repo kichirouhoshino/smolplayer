@@ -73,7 +73,7 @@ if command -v msgfmt &>/dev/null && [[ -d "po" ]]; then
 fi
 
 # Copy application python modules and assets
-cp -f main.py player.py mpris.py playlist.py utils.py tray.py config.py constants.py i18n.py test_smolplayer.py icon.svg icon-64.png icon-128.png icon-256.png icon-512.png "$APP_DIR/"
+cp -f main.py player.py probing.py dac.py parsers.py mpris.py playlist.py utils.py tray.py config.py constants.py i18n.py test_smolplayer.py icon.svg icon-64.png icon-128.png icon-256.png icon-512.png "$APP_DIR/"
 if [[ -d "locale" ]]; then
     cp -rf locale "$APP_DIR/"
 fi

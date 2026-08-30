@@ -26,7 +26,7 @@ modules:
     build-commands:
       - install -D main.py /app/bin/smolplayer
       - chmod +x /app/bin/smolplayer
-      - install -t /app/bin player.py mpris.py playlist.py utils.py tray.py config.py constants.py i18n.py test_smolplayer.py
+      - install -t /app/bin player.py probing.py dac.py parsers.py mpris.py playlist.py utils.py tray.py config.py constants.py i18n.py test_smolplayer.py
       - cp -rf locale /app/bin/
 
       - install -D icon.svg /app/bin/icon.svg

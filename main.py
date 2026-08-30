@@ -89,6 +89,17 @@ def main() -> None:
     args = sys.argv[1:]
     cfg = get_config()
 
+    if "--help" in args or "-h" in args:
+        print(f"Usage: {sys.argv[0]} [OPTIONS] [FILE|FOLDER|PLAYLIST...]")
+        print(f"\n{APP_NAME} {APP_VERSION} – GUI-less music player driven by MPRIS.")
+        print("\nOptions:")
+        print("  -h, --help       Show this help message and exit")
+        print("  -v, --version    Show version information and exit")
+        print("  -c, --config     Open the configuration file in system editor")
+        print("  -q, --quit       Quit running instance of smolplayer")
+        print("      --close      Alias for --quit")
+        sys.exit(0)
+
     if "--version" in args or "-v" in args:
         print(f"{APP_NAME} {APP_VERSION}")
         sys.exit(0)
@@ -112,6 +123,7 @@ def main() -> None:
     engine.replaygain_default_preamp = cfg.replaygain_default_preamp
     engine.replaygain_peaking = cfg.replaygain_peaking
     engine.internal_resampler = cfg.internal_resampler
+    engine.gapless_playback = cfg.gapless_playback
     engine.bit_perfect = cfg.bit_perfect
     playlist = PlaylistManager()
     power_inhibitor = PowerInhibitor()
@@ -145,8 +157,27 @@ def main() -> None:
             mpris.notify_shuffle(shuffle)
             mpris.notify_loop(loop_status)
 
+    def handle_gapless_get_next() -> Optional[Union[str, TrackInfo]]:
+        return playlist.get_next(auto_advance=True)
+
+    def handle_gapless_track_transition(info: TrackInfo) -> None:
+        if mpris:
+            mpris.notify_track(info, playlist.current_index)
+        if tray:
+            tray.notify_track(info)
+
+        def _on_cover_done(url):
+            if mpris:
+                mpris.notify_track(engine.track, playlist.current_index)
+            if tray:
+                tray.notify_track(engine.track)
+
+        engine.fetch_cover_async(callback=_on_cover_done)
+
     engine.on_state_change = handle_state_change
     engine.on_volume_change = handle_volume_change
+    engine.get_next_track = handle_gapless_get_next
+    engine.on_gapless_track_transition = handle_gapless_track_transition
     playlist.on_toggles_changed = handle_toggles_change
 
     def play_track(track_target: Optional[Union[str, TrackInfo]]) -> bool:

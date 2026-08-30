@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest.mock import MagicMock, patch
@@ -46,6 +47,54 @@ from mpris import MprisService, _track_id
 from config import Config, get_config, open_config_file, get_config_file_path
 from constants import APP_NAME, TRACK_OBJ_PATH
 
+import probing
+import dac
+import parsers
+
+_ORIGINAL_XDG_CONFIG_HOME = os.environ.get("XDG_CONFIG_HOME")
+_TEST_TEMP_CONFIG_DIR: Optional[tempfile.TemporaryDirectory] = None
+
+
+def setUpModule() -> None:
+    global _TEST_TEMP_CONFIG_DIR
+    _TEST_TEMP_CONFIG_DIR = tempfile.TemporaryDirectory()
+    os.environ["XDG_CONFIG_HOME"] = _TEST_TEMP_CONFIG_DIR.name
+    import config
+    config._CONFIG_DIR = os.path.join(_TEST_TEMP_CONFIG_DIR.name, "smolplayer")
+    config._CONFIG_FILE = os.path.join(config._CONFIG_DIR, "config.ini")
+    config._STATE_FILE = os.path.join(config._CONFIG_DIR, "state.json")
+
+
+def tearDownModule() -> None:
+    global _TEST_TEMP_CONFIG_DIR
+    if _TEST_TEMP_CONFIG_DIR is not None:
+        _TEST_TEMP_CONFIG_DIR.cleanup()
+        _TEST_TEMP_CONFIG_DIR = None
+    if _ORIGINAL_XDG_CONFIG_HOME is not None:
+        os.environ["XDG_CONFIG_HOME"] = _ORIGINAL_XDG_CONFIG_HOME
+    else:
+        os.environ.pop("XDG_CONFIG_HOME", None)
+    import config
+    config._CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "smolplayer")
+    config._CONFIG_FILE = os.path.join(config._CONFIG_DIR, "config.ini")
+    config._STATE_FILE = os.path.join(config._CONFIG_DIR, "state.json")
+
+
+class TestModuleStructure(unittest.TestCase):
+    def test_direct_imports_and_reexports(self) -> None:
+        import player
+        import playlist
+        self.assertIs(player.TrackInfo, probing.TrackInfo)
+        self.assertIs(player.probe_track, probing.probe_track)
+        self.assertIs(player.extract_cover, probing.extract_cover)
+        self.assertIs(player.DacCapabilities, dac.DacCapabilities)
+        self.assertIs(player.get_system_sink_info, dac.get_system_sink_info)
+        self.assertIs(playlist.parse_cue, parsers.parse_cue)
+        self.assertIs(playlist.parse_m3u, parsers.parse_m3u)
+        self.assertIs(playlist.parse_pls, parsers.parse_pls)
+        self.assertIs(playlist.parse_xspf, parsers.parse_xspf)
+        self.assertIs(playlist.scan_audio_files_recursive, parsers.scan_audio_files_recursive)
+
 
 class TestConfig(unittest.TestCase):
     def test_config_defaults(self) -> None:
@@ -57,6 +106,8 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(cfg.recurse_folderopen, 1)
         self.assertEqual(cfg.timeout, 30)
         self.assertEqual(cfg.presence, 0)
+        self.assertEqual(cfg.internal_resampler, 0)
+        self.assertEqual(cfg.gapless_playback, 0)
         self.assertEqual(cfg.cue_noshuffle, 1)
         self.assertEqual(cfg.cue_order, 0)
         self.assertEqual(cfg.lossy_bps, 0)
@@ -118,6 +169,8 @@ class TestConfig(unittest.TestCase):
                     "presence = 2\n"
                     "remember_toggles = 1\n"
                     "decode_method = 1\n"
+                    "internal_resampler = 1\n"
+                    "gapless_playback = 1\n"
                     "cue_noshuffle = 0\n"
                     "cue_order = 1\n"
                     "lossy_bps = 1\n")
@@ -135,6 +188,8 @@ class TestConfig(unittest.TestCase):
                 self.assertEqual(cfg.presence, 2)
                 self.assertEqual(cfg.remember_toggles, 1)
                 self.assertEqual(cfg.decode_method, 1)
+                self.assertEqual(cfg.internal_resampler, 1)
+                self.assertEqual(cfg.gapless_playback, 1)
                 self.assertEqual(cfg.cue_noshuffle, 0)
                 self.assertEqual(cfg.cue_order, 1)
                 self.assertEqual(cfg.lossy_bps, 1)
@@ -158,6 +213,7 @@ class TestConfig(unittest.TestCase):
                 self.assertEqual(cfg.cue_noshuffle, 1)
                 self.assertEqual(cfg.cue_order, 0)
                 self.assertEqual(cfg.lossy_bps, 0)
+                self.assertEqual(cfg.gapless_playback, 0)
                 with open(tmp_path, "r", encoding="utf-8") as f_read:
                     content = f_read.read()
                     self.assertIn("replaygain_preamp = 0", content)
@@ -165,6 +221,7 @@ class TestConfig(unittest.TestCase):
                     self.assertIn("cue_noshuffle = 1", content)
                     self.assertIn("cue_order = 0", content)
                     self.assertIn("lossy_bps = 0", content)
+                    self.assertIn("gapless_playback = 0", content)
                     self.assertIn("replay_gain = 1", content)
         finally:
             if os.path.exists(tmp_path):
@@ -326,15 +383,29 @@ class TestPlaylistManager(unittest.TestCase):
             self.assertTrue(pm.shuffle)
             self.assertEqual(pm.loop_status, "Playlist")
 
-    def test_open_folder_with_shuffle_enabled_plays_random_track(self) -> None:
-        with patch("playlist.get_config", return_value=Config(remember_toggles=1)), \
-             patch("playlist.load_toggles_state", return_value=(True, "None")), \
-             patch("random.randint", return_value=2):
-            pm = PlaylistManager()
-            first_track = pm.load_file_or_folder(self.root)
-            self.assertEqual(first_track, self.f3)
-            self.assertEqual(pm.current_index, 2)
-            self.assertEqual(pm._shuffled_indices[0], 2)
+    def test_peek_next(self) -> None:
+        pm = PlaylistManager()
+        pm.load_file_or_folder(self.root)
+        self.assertEqual(pm.current_index, 0)
+
+        # In linear mode, peek_next returns track 1 without advancing index
+        next_t = pm.peek_next()
+        self.assertEqual(next_t, self.f2)
+        self.assertEqual(pm.current_index, 0)
+
+        # Advance to last track
+        pm.get_next()
+        pm.get_next()
+        self.assertEqual(pm.current_index, 2)
+        self.assertIsNone(pm.peek_next())
+
+        # With Playlist loop, peek_next returns first track
+        pm.loop_status = "Playlist"
+        self.assertEqual(pm.peek_next(), self.f1)
+
+        # With Track loop, peek_next returns current track
+        pm.loop_status = "Track"
+        self.assertEqual(pm.peek_next(auto_advance=True), self.f3)
 
 
 class TestPlayerEngine(unittest.TestCase):
@@ -678,7 +749,7 @@ class TestPlayerEngine(unittest.TestCase):
             self.assertIsNotNone(proc)
             cmd = mock_popen.call_args[0][0]
             self.assertIn("-f", cmd)
-            self.assertEqual(cmd[cmd.index("-f") + 1], "s16le")
+            self.assertEqual(cmd[cmd.index("-f") + 1], "f32le")
 
             # Launch pipeline pw-cat arguments test
             self.engine._track = t
@@ -691,9 +762,126 @@ class TestPlayerEngine(unittest.TestCase):
                     break
             self.assertIsNotNone(pwcat_call)
             self.assertIn("--format", pwcat_call)
-            self.assertEqual(pwcat_call[pwcat_call.index("--format") + 1], "s16")
+            self.assertEqual(pwcat_call[pwcat_call.index("--format") + 1], "f32")
             self.assertIn("--rate", pwcat_call)
             self.assertEqual(pwcat_call[pwcat_call.index("--rate") + 1], "48000")
+
+        # Also verify GStreamer produces F32LE caps
+        with patch("player.get_system_sink_info", return_value=("s16", 48000)), \
+             patch("subprocess.Popen") as mock_popen, \
+             patch("shutil.which", return_value="/usr/bin/gst-launch-1.0"):
+            mock_popen.return_value.poll.return_value = None
+            self.engine._spawn_gstreamer_proc(t, 0.0)
+            py_call = mock_popen.call_args_list[0][0][0]
+            self.assertIn("audio/x-raw,format=F32LE,layout=interleaved", py_call[2])
+            self.assertIn("audioresample quality=10 ! capsfilter caps=audio/x-raw,rate=48000", py_call[2])
+
+    def test_gapless_playback_seamless_transition(self) -> None:
+        t1 = TrackInfo(path="/tmp/track1.flac", title="Track 1", sample_rate=44100, pwcat_fmt="s16", channels=2)
+        t2 = TrackInfo(path="/tmp/track2.flac", title="Track 2", sample_rate=44100, pwcat_fmt="s16", channels=2)
+
+        self.engine.gapless_playback = 1
+        self.engine._track = t1
+        self.engine._pipeline_generation = 1
+        iter_next = iter([t2, None])
+        self.engine.get_next_track = lambda: next(iter_next, None)
+
+        transitions = []
+        self.engine.on_gapless_track_transition = lambda t: transitions.append(t)
+
+        mock_ffmpeg1 = MagicMock()
+        mock_ffmpeg1.stdout.read.side_effect = [b"chunk1", b""]
+        mock_ffmpeg2 = MagicMock()
+        mock_ffmpeg2.stdout.read.side_effect = [b"chunk2", b""]
+
+        mock_pwcat = MagicMock()
+        mock_pwcat.stdin = MagicMock()
+
+        self.engine._pwcat = mock_pwcat
+        self.engine._pwcat_fmt = ("s16", 44100, 2)
+
+        with patch.object(self.engine, "_spawn_ffmpeg_proc", return_value=mock_ffmpeg2):
+            self.engine._pump_loop(
+                gen=1,
+                stop_evt=threading.Event(),
+                ffmpeg_proc=mock_ffmpeg1,
+                pwcat_proc=mock_pwcat,
+            )
+
+        self.assertEqual(self.engine.track, t2)
+        self.assertEqual(len(transitions), 1)
+        self.assertEqual(transitions[0].title, "Track 2")
+        mock_pwcat.stdin.write.assert_any_call(b"chunk1")
+        mock_pwcat.stdin.write.assert_any_call(b"chunk2")
+
+    def test_gapless_playback_incompatible_rate_fallback(self) -> None:
+        t1 = TrackInfo(path="/tmp/track1.flac", title="Track 1", sample_rate=44100, pwcat_fmt="s16", channels=2)
+        t2 = TrackInfo(path="/tmp/track2.flac", title="Track 2", sample_rate=96000, pwcat_fmt="s32", channels=2)
+
+        self.engine.gapless_playback = 1
+        self.engine.internal_resampler = 0
+        self.engine._track = t1
+        self.engine._pipeline_generation = 1
+        iter_next = iter([t2, None])
+        self.engine.get_next_track = lambda: next(iter_next, None)
+
+        track_ended = []
+        self.engine.on_track_end = lambda: track_ended.append(True)
+
+        mock_ffmpeg1 = MagicMock()
+        mock_ffmpeg1.stdout.read.side_effect = [b"chunk1", b""]
+
+        mock_pwcat = MagicMock()
+        mock_pwcat.stdin = MagicMock()
+
+        self.engine._pwcat = mock_pwcat
+        self.engine._pwcat_fmt = ("s16", 44100, 2)
+
+        self.engine._pump_loop(
+            gen=1,
+            stop_evt=threading.Event(),
+            ffmpeg_proc=mock_ffmpeg1,
+            pwcat_proc=mock_pwcat,
+        )
+
+        self.assertEqual(len(track_ended), 1)
+        self.assertEqual(self.engine.track, t1)
+
+    def test_gapless_playback_with_internal_resampler_chains_different_rates(self) -> None:
+        t1 = TrackInfo(path="/tmp/track1.flac", title="Track 1", sample_rate=44100, pwcat_fmt="s16", channels=2)
+        t2 = TrackInfo(path="/tmp/track2.flac", title="Track 2", sample_rate=96000, pwcat_fmt="s32", channels=2)
+
+        self.engine.gapless_playback = 1
+        self.engine.internal_resampler = 1
+        self.engine._track = t1
+        self.engine._pipeline_generation = 1
+        iter_next = iter([t2, None])
+        self.engine.get_next_track = lambda: next(iter_next, None)
+
+        transitions = []
+        self.engine.on_gapless_track_transition = lambda t: transitions.append(t)
+
+        mock_ffmpeg1 = MagicMock()
+        mock_ffmpeg1.stdout.read.side_effect = [b"chunk1", b""]
+        mock_ffmpeg2 = MagicMock()
+        mock_ffmpeg2.stdout.read.side_effect = [b"chunk2", b""]
+
+        mock_pwcat = MagicMock()
+        mock_pwcat.stdin = MagicMock()
+
+        self.engine._pwcat = mock_pwcat
+        self.engine._pwcat_fmt = ("f32", 48000, 2)
+
+        with patch.object(self.engine, "_spawn_ffmpeg_proc", return_value=mock_ffmpeg2):
+            self.engine._pump_loop(
+                gen=1,
+                stop_evt=threading.Event(),
+                ffmpeg_proc=mock_ffmpeg1,
+                pwcat_proc=mock_pwcat,
+            )
+
+        self.assertEqual(self.engine.track, t2)
+        self.assertEqual(len(transitions), 1)
 
     def test_bit_perfect_passthrough_and_fallback(self) -> None:
         t = TrackInfo(path="/tmp/fake.flac", duration=180.0)

@@ -11,6 +11,7 @@ import json
 import os
 import subprocess
 from dataclasses import dataclass
+from typing import Any
 
 _CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "smolplayer")
 _CONFIG_FILE = os.path.join(_CONFIG_DIR, "config.ini")
@@ -104,22 +105,22 @@ _OPTION_BLOCKS: dict[str, str] = {
         "# Default is 0\n"
         "replaygain_default_preamp = 0\n"
     ),
-    "replaygain_peaking": (
-        "\n# Set how will smolplayer handle peaks when ReplayGain is on\n"
-        "# 0 - Disabled\n"
-        "# 1 - Apply appropriate gain\n"
-        "# 2 - Dynamic range compression (if it clips)\n"
-        "# Default is 0\n"
-        "replaygain_peaking = 0\n"
-    ),
     "internal_resampler": (
         "\n# Set whether to use ffmpeg/gstreamer for resampling when format does not\n"
-        "# match the output device. It is highly recommended to keep this DISABLED,\n"
-        "# as PipeWire already does this efficiently\n"
+        "# match the output device. It's best to keep this disabled unless you want to\n"
+        "# use the gapless playback feature\n"
         "# 0 - Disabled\n"
         "# 1 - Enabled\n"
         "# Default is 0\n"
         "internal_resampler = 0\n"
+    ),
+    "gapless_playback": (
+        "\n# Enable gapless playback. Only works when the sample rate of consecutive\n"
+        "# tracks match. Set the internal_resampler setting to 1 if you want to apply it to all tracks\n"
+        "# 0 - Disabled\n"
+        "# 1 - Enabled\n"
+        "# Default is 0\n"
+        "gapless_playback = 0\n"
     ),
     "bit_perfect": (
         "\n# Enable Bit-Perfect Playback (Experimental)\n"
@@ -129,6 +130,14 @@ _OPTION_BLOCKS: dict[str, str] = {
         "# the same time. Use with caution!\n"
         "# Default is 0\n"
         "bit_perfect = 0\n"
+    ),
+    "replaygain_peaking": (
+        "\n# Set how will smolplayer handle peaks when ReplayGain is on\n"
+        "# 0 - Disabled\n"
+        "# 1 - Apply appropriate gain\n"
+        "# 2 - Dynamic range compression (if it clips)\n"
+        "# Default is 0\n"
+        "replaygain_peaking = 0\n"
     ),
     "cue_noshuffle": (
         "\n# Set whether to force shuffle off for cue files.\n"
@@ -161,6 +170,9 @@ DEFAULT_CONFIG_TEXT = DEFAULT_CONFIG_HEADER + "".join(_OPTION_BLOCKS.values())
 @dataclass
 class Config:
     replay_gain: int = 0
+    replaygain_preamp: float = 0.0
+    replaygain_default_preamp: float = 0.0
+    replaygain_peaking: int = 0
     shuffle_algo: int = 0
     sort_method: int = 0
     recurse_fileopen: int = 0
@@ -169,10 +181,8 @@ class Config:
     presence: int = 0
     remember_toggles: int = 0
     decode_method: int = 0
-    replaygain_preamp: float = 0.0
-    replaygain_default_preamp: float = 0.0
-    replaygain_peaking: int = 0
     internal_resampler: int = 0
+    gapless_playback: int = 0
     bit_perfect: int = 0
     cue_noshuffle: int = 1
     cue_order: int = 0
@@ -181,6 +191,10 @@ class Config:
     @property
     def audiophile_mode(self) -> int:
         return self.internal_resampler
+
+    @audiophile_mode.setter
+    def audiophile_mode(self, value: int) -> None:
+        self.internal_resampler = int(value)
 
     @property
     def tray_enabled(self) -> bool:
@@ -196,7 +210,7 @@ def get_config() -> Config:
     cfg = Config()
     if not os.path.exists(_CONFIG_FILE):
         try:
-            os.makedirs(_CONFIG_DIR, exist_ok=True)
+            os.makedirs(os.path.dirname(_CONFIG_FILE) or _CONFIG_DIR, exist_ok=True)
             with open(_CONFIG_FILE, "w", encoding="utf-8") as f:
                 f.write(DEFAULT_CONFIG_TEXT)
         except OSError:
@@ -237,6 +251,7 @@ def get_config() -> Config:
                 cfg.internal_resampler = sec.getint("internal_resampler", 0)
             else:
                 cfg.internal_resampler = sec.getint("audiophile_mode", 0)
+            cfg.gapless_playback = sec.getint("gapless_playback", 0)
             cfg.bit_perfect = sec.getint("bit_perfect", 0)
             cfg.cue_noshuffle = sec.getint("cue_noshuffle", 1)
             cfg.cue_order = sec.getint("cue_order", 0)
@@ -281,7 +296,7 @@ def load_toggles_state() -> tuple[bool, str]:
 def save_toggles_state(shuffle: bool, loop_status: str) -> None:
     """Save (shuffle, loop_status) state for next app launch."""
     try:
-        os.makedirs(_CONFIG_DIR, exist_ok=True)
+        os.makedirs(os.path.dirname(_STATE_FILE) or _CONFIG_DIR, exist_ok=True)
         with open(_STATE_FILE, "w", encoding="utf-8") as f:
             json.dump({"shuffle": shuffle, "loop_status": loop_status}, f)
     except Exception:
@@ -304,4 +319,3 @@ def open_config_file() -> None:
             subprocess.Popen(["gio", "open", cfg_file])
         except Exception:
             pass
-
