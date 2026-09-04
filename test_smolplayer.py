@@ -53,10 +53,12 @@ import parsers
 
 _ORIGINAL_XDG_CONFIG_HOME = os.environ.get("XDG_CONFIG_HOME")
 _TEST_TEMP_CONFIG_DIR: Optional[tempfile.TemporaryDirectory] = None
+_VOL_LISTENER_PATCH: Optional[Any] = None
+_NOTIF_PATCH: Optional[Any] = None
 
 
 def setUpModule() -> None:
-    global _TEST_TEMP_CONFIG_DIR
+    global _TEST_TEMP_CONFIG_DIR, _VOL_LISTENER_PATCH, _NOTIF_PATCH
     _TEST_TEMP_CONFIG_DIR = tempfile.TemporaryDirectory()
     os.environ["XDG_CONFIG_HOME"] = _TEST_TEMP_CONFIG_DIR.name
     import config
@@ -64,9 +66,23 @@ def setUpModule() -> None:
     config._CONFIG_FILE = os.path.join(config._CONFIG_DIR, "config.ini")
     config._STATE_FILE = os.path.join(config._CONFIG_DIR, "state.json")
 
+    import player
+    _VOL_LISTENER_PATCH = patch.object(player.PlayerEngine, "_start_volume_listener")
+    _VOL_LISTENER_PATCH.start()
+
+    import utils
+    _NOTIF_PATCH = patch.object(utils, "send_notification")
+    _NOTIF_PATCH.start()
+
 
 def tearDownModule() -> None:
-    global _TEST_TEMP_CONFIG_DIR
+    global _TEST_TEMP_CONFIG_DIR, _VOL_LISTENER_PATCH, _NOTIF_PATCH
+    if _NOTIF_PATCH is not None:
+        _NOTIF_PATCH.stop()
+        _NOTIF_PATCH = None
+    if _VOL_LISTENER_PATCH is not None:
+        _VOL_LISTENER_PATCH.stop()
+        _VOL_LISTENER_PATCH = None
     if _TEST_TEMP_CONFIG_DIR is not None:
         _TEST_TEMP_CONFIG_DIR.cleanup()
         _TEST_TEMP_CONFIG_DIR = None
@@ -149,6 +165,38 @@ class TestConfig(unittest.TestCase):
         shuf, loop = load_toggles_state()
         self.assertFalse(shuf)
         self.assertEqual(loop, "None")
+
+    def test_remember_volume_state(self) -> None:
+        from config import (
+            save_volume_state,
+            load_volume_state,
+            save_toggles_state,
+            load_toggles_state,
+        )
+
+        # Default when no volume has been saved
+        self.assertEqual(load_volume_state(), 1.0)
+
+        # Save volume and reload
+        save_volume_state(0.44)
+        self.assertAlmostEqual(load_volume_state(), 0.44)
+
+        # Clamping
+        save_volume_state(1.5)
+        self.assertEqual(load_volume_state(), 1.0)
+        save_volume_state(-0.2)
+        self.assertEqual(load_volume_state(), 0.0)
+
+        # State isolation: saving toggles does not wipe volume, and saving volume does not wipe toggles
+        save_toggles_state(True, "Track")
+        save_volume_state(0.65)
+        shuf, loop = load_toggles_state()
+        self.assertTrue(shuf)
+        self.assertEqual(loop, "Track")
+        self.assertAlmostEqual(load_volume_state(), 0.65)
+
+        save_toggles_state(False, "None")
+        self.assertAlmostEqual(load_volume_state(), 0.65)
 
     def test_decode_method_option(self) -> None:
         cfg = Config()
@@ -410,10 +458,14 @@ class TestPlaylistManager(unittest.TestCase):
 
 class TestPlayerEngine(unittest.TestCase):
     def setUp(self) -> None:
+        from config import save_volume_state
+        save_volume_state(1.0)
         self.engine = PlayerEngine()
 
     def tearDown(self) -> None:
         self.engine.close()
+        from config import save_volume_state
+        save_volume_state(1.0)
 
     def test_engine_initial_state(self) -> None:
         with patch.object(self.engine, "sync_system_volume"):
@@ -423,11 +475,42 @@ class TestPlayerEngine(unittest.TestCase):
 
 
     def test_volume_clamping(self) -> None:
+        from config import save_volume_state
         self.engine.set_volume(1.5)
         self.assertLessEqual(self.engine.volume, 1.0)
 
         self.engine.set_volume(-0.5)
         self.assertGreaterEqual(self.engine.volume, 0.0)
+        save_volume_state(1.0)
+
+    def test_volume_persistence_across_sessions(self) -> None:
+        from config import save_volume_state, load_volume_state
+        self.engine.set_volume(0.42)
+        self.assertAlmostEqual(self.engine.volume, 0.42)
+        self.assertAlmostEqual(load_volume_state(), 0.42)
+
+        # New engine instance in next play session loads the saved volume
+        new_engine = PlayerEngine()
+        try:
+            with patch.object(new_engine, "sync_system_volume"):
+                self.assertAlmostEqual(new_engine.volume, 0.42)
+        finally:
+            new_engine.close()
+
+        # Reset volume back to 1.0
+        save_volume_state(1.0)
+
+    def test_launch_pipeline_applies_volume_to_new_pwcat(self) -> None:
+        t = TrackInfo(path="/tmp/fake.flac", duration=180.0)
+        self.engine._track = t
+        self.engine.set_volume(0.55)
+
+        with patch("subprocess.Popen") as mock_popen, \
+             patch("shutil.which", return_value="/usr/bin/ffmpeg"), \
+             patch.object(self.engine, "_apply_volume") as mock_apply_vol:
+            mock_popen.return_value.poll.return_value = None
+            self.engine._launch_pipeline()
+            mock_apply_vol.assert_called_once()
 
     def test_replaygain_cmd_args(self) -> None:
         # Off: No gain filter applied
@@ -1008,50 +1091,104 @@ class TestPlayerEngine(unittest.TestCase):
         self.assertEqual(self.engine._pipeline_generation, initial_gen + 20)
         self.assertEqual(self.engine.state, STATE_PLAYING)
 
-
-class TestTrayService(unittest.TestCase):
-    def test_tray_tooltip_text(self) -> None:
-        engine = PlayerEngine()
-        playlist = PlaylistManager()
-
-        tray = TrayService(engine, playlist)
-        self.assertEqual(tray.get_tooltip_text(), f"{APP_NAME} - Stopped")
-
-        engine._track = TrackInfo(
-            path="/tmp/song.mp3",
-            title="Fast Car",
-            artist="Tracy Chapman",
-            album="Album",
-            duration=240.0,
+    def test_rapid_concurrent_seek_coalescing(self) -> None:
+        t = TrackInfo(
+            path="/tmp/fake.flac",
+            title="Fake",
+            duration=180.0,
             sample_rate=44100,
             channels=2,
             pwcat_fmt="s16",
             ffmpeg_fmt="s16le",
             bytes_per_sample=2,
         )
-        engine._state = STATE_PLAYING
+        self.engine._track = t
+        self.engine._state = STATE_PLAYING
 
-        self.assertEqual(tray.get_tooltip_text(), "Fast Car - Tracy Chapman (Playing)")
+        with patch("subprocess.Popen") as mock_popen:
+            mock_popen.return_value.poll.return_value = None
+            mock_popen.return_value.stdout = MagicMock()
+            mock_popen.return_value.stdin = MagicMock()
+
+            threads = [
+                threading.Thread(target=self.engine.seek, args=(10.0 * i,))
+                for i in range(1, 6)
+            ]
+            for th in threads:
+                th.start()
+            for th in threads:
+                th.join()
+
+            self.assertEqual(self.engine.state, STATE_PLAYING)
+            self.assertIn(self.engine._play_start_pos, [10.0, 20.0, 30.0, 40.0, 50.0])
+            self.assertGreaterEqual(self.engine.position, 10.0)
+            self.assertLessEqual(self.engine.position, 55.0)
+
+    def test_seek_updates_position_immediately_without_stale_reversion(self) -> None:
+        t = TrackInfo(path="/tmp/fake.flac", duration=180.0)
+        self.engine._track = t
+        self.engine._state = STATE_PLAYING
+        self.engine._play_start_pos = 10.0
+        self.engine._play_start_time = time.monotonic() - 2.0  # 12.0s elapsed
+
+        with patch("subprocess.Popen") as mock_popen:
+            mock_popen.return_value.poll.return_value = None
+            mock_popen.return_value.stdout = MagicMock()
+            mock_popen.return_value.stdin = MagicMock()
+
+            self.engine.seek(45.0)
+            self.assertAlmostEqual(self.engine.position, 45.0, delta=0.5)
+
+
+class TestTrayService(unittest.TestCase):
+    def test_tray_tooltip_text(self) -> None:
+        engine = PlayerEngine()
+        try:
+            playlist = PlaylistManager()
+
+            tray = TrayService(engine, playlist)
+            self.assertEqual(tray.get_tooltip_text(), f"{APP_NAME} - Stopped")
+
+            engine._track = TrackInfo(
+                path="/tmp/song.mp3",
+                title="Fast Car",
+                artist="Tracy Chapman",
+                album="Album",
+                duration=240.0,
+                sample_rate=44100,
+                channels=2,
+                pwcat_fmt="s16",
+                ffmpeg_fmt="s16le",
+                bytes_per_sample=2,
+            )
+            engine._state = STATE_PLAYING
+
+            self.assertEqual(tray.get_tooltip_text(), "Fast Car - Tracy Chapman (Playing)")
+        finally:
+            engine.close()
 
     def test_tray_menu_events(self) -> None:
         from tray import _DBUS_OK, _MenuObject
         if not _DBUS_OK:
             return
         engine = PlayerEngine()
-        playlist = PlaylistManager()
-        mock_open_cfg = MagicMock()
-        mock_quit = MagicMock()
+        try:
+            playlist = PlaylistManager()
+            mock_open_cfg = MagicMock()
+            mock_quit = MagicMock()
 
-        tray = TrayService(engine, playlist, on_quit=mock_quit, on_open_config=mock_open_cfg)
-        if hasattr(tray, "_menu_object"):
-            menu_obj = tray._menu_object
-            # Event for item 1 ("Open Config File")
-            menu_obj.Event(1, "clicked", None, 0)
-            mock_open_cfg.assert_called_once()
+            tray = TrayService(engine, playlist, on_quit=mock_quit, on_open_config=mock_open_cfg)
+            if hasattr(tray, "_menu_object"):
+                menu_obj = tray._menu_object
+                # Event for item 1 ("Open Config File")
+                menu_obj.Event(1, "clicked", None, 0)
+                mock_open_cfg.assert_called_once()
 
-            # Event for item 2 ("Quit smolplayer")
-            menu_obj.Event(2, "clicked", None, 0)
-            mock_quit.assert_called_once()
+                # Event for item 2 ("Quit smolplayer")
+                menu_obj.Event(2, "clicked", None, 0)
+                mock_quit.assert_called_once()
+        finally:
+            engine.close()
 
 
 class TestMainCLI(unittest.TestCase):
@@ -1870,29 +2007,34 @@ class TestFragileMprisService(unittest.TestCase):
             return
         engine = PlayerEngine()
         playlist = PlaylistManager()
-        with patch("dbus.SessionBus"), \
-             patch("dbus.service.BusName"), \
-             patch("dbus.service.Object.__init__", return_value=None):
-            service = MprisService(engine, playlist)
-            service.PropertiesChanged = MagicMock()
+        try:
+            with patch("dbus.SessionBus"), \
+                 patch("dbus.service.BusName"), \
+                 patch("dbus.service.Object.__init__", return_value=None):
+                service = MprisService(engine, playlist)
+                service.PropertiesChanged = MagicMock()
 
-            # Volume Set and Get
-            service.Set(_PLAYER, "Volume", 0.75)
-            self.assertAlmostEqual(engine.volume, 0.75, places=2)
-            all_props = service.GetAll(_PLAYER)
-            self.assertEqual(all_props["PlaybackStatus"], "Stopped")
+                # Volume Set and Get
+                service.Set(_PLAYER, "Volume", 0.75)
+                self.assertAlmostEqual(engine.volume, 0.75, places=2)
+                all_props = service.GetAll(_PLAYER)
+                self.assertEqual(all_props["PlaybackStatus"], "Stopped")
 
-            # Shuffle Set
-            service.Set(_PLAYER, "Shuffle", True)
-            self.assertTrue(playlist.shuffle)
+                # Shuffle Set
+                service.Set(_PLAYER, "Shuffle", True)
+                self.assertTrue(playlist.shuffle)
 
-            # LoopStatus Set
-            service.Set(_PLAYER, "LoopStatus", "Track")
-            self.assertEqual(playlist.loop_status, "Track")
+                # LoopStatus Set
+                service.Set(_PLAYER, "LoopStatus", "Track")
+                self.assertEqual(playlist.loop_status, "Track")
 
-            # MPRIS identity
-            mpris_props = service.GetAll(_MPRIS)
-            self.assertEqual(mpris_props["Identity"], APP_NAME)
+                # MPRIS identity
+                mpris_props = service.GetAll(_MPRIS)
+                self.assertEqual(mpris_props["Identity"], APP_NAME)
+        finally:
+            engine.close()
+            from config import save_volume_state
+            save_volume_state(1.0)
 
 
 class TestMprisService(unittest.TestCase):
@@ -1905,29 +2047,32 @@ class TestMprisService(unittest.TestCase):
         if not _DBUS_OK:
             return
         engine = PlayerEngine()
-        playlist = PlaylistManager()
-        with patch("dbus.SessionBus"), \
-             patch("dbus.service.BusName"), \
-             patch("dbus.service.Object.__init__", return_value=None):
-            service = MprisService(engine, playlist)
+        try:
+            playlist = PlaylistManager()
+            with patch("dbus.SessionBus"), \
+                 patch("dbus.service.BusName"), \
+                 patch("dbus.service.Object.__init__", return_value=None):
+                service = MprisService(engine, playlist)
 
-            t = TrackInfo(
-                path="/tmp/audio.flac",
-                title="Sub Track",
-                artist="Artist",
-                album="Album",
-                duration=150.0,
-                track_number=3,
-                disc_number=1,
-                cue_path="/tmp/audio.cue",
-            )
-            meta = service._metadata_for(t, index=2)
-            self.assertEqual(meta["xesam:title"], "Sub Track")
-            self.assertEqual(meta["xesam:artist"][0], "Artist")
-            self.assertEqual(meta["xesam:album"], "Album")
-            self.assertEqual(meta["xesam:trackNumber"], 3)
-            self.assertEqual(meta["xesam:discNumber"], 1)
-            self.assertEqual(meta["xesam:url"], "file:///tmp/audio.cue")
+                t = TrackInfo(
+                    path="/tmp/audio.flac",
+                    title="Sub Track",
+                    artist="Artist",
+                    album="Album",
+                    duration=150.0,
+                    track_number=3,
+                    disc_number=1,
+                    cue_path="/tmp/audio.cue",
+                )
+                meta = service._metadata_for(t, index=2)
+                self.assertEqual(meta["xesam:title"], "Sub Track")
+                self.assertEqual(meta["xesam:artist"][0], "Artist")
+                self.assertEqual(meta["xesam:album"], "Album")
+                self.assertEqual(meta["xesam:trackNumber"], 3)
+                self.assertEqual(meta["xesam:discNumber"], 1)
+                self.assertEqual(meta["xesam:url"], "file:///tmp/audio.cue")
+        finally:
+            engine.close()
 
 
 class TestFragileAutoCloseManager(unittest.TestCase):
@@ -2127,52 +2272,58 @@ class TestDacCapabilitiesAndBitPerfectFallback(unittest.TestCase):
 
     def test_launch_pipeline_unsupported_rate_triggers_early_fallback(self) -> None:
         engine = PlayerEngine()
-        engine.bit_perfect = 1
-        t = TrackInfo(path="/tmp/test.flac", sample_rate=352800, channels=2, pwcat_fmt="s32")
-        engine._track = t
-        caps = DacCapabilities(
-            formats={"S16_LE", "S32_LE"},
-            sample_rates={44100, 48000, 96000, 192000},
-            max_channels=2,
-        )
+        try:
+            engine.bit_perfect = 1
+            t = TrackInfo(path="/tmp/test.flac", sample_rate=352800, channels=2, pwcat_fmt="s32")
+            engine._track = t
+            caps = DacCapabilities(
+                formats={"S16_LE", "S32_LE"},
+                sample_rates={44100, 48000, 96000, 192000},
+                max_channels=2,
+            )
 
-        with patch("player.get_dac_hardware_capabilities", return_value=caps), \
-             patch("player.send_error_notification") as mock_notif, \
-             patch("subprocess.Popen") as mock_popen, \
-             patch("shutil.which", return_value="/usr/bin/ffmpeg"):
-            mock_popen.return_value.poll.return_value = None
-            success = engine._launch_pipeline()
-            self.assertTrue(success)
-            mock_notif.assert_called_once()
-            self.assertIn("352800Hz", mock_notif.call_args[0][1])
+            with patch("player.get_dac_hardware_capabilities", return_value=caps), \
+                 patch("player.send_error_notification") as mock_notif, \
+                 patch("subprocess.Popen") as mock_popen, \
+                 patch("shutil.which", return_value="/usr/bin/ffmpeg"):
+                mock_popen.return_value.poll.return_value = None
+                success = engine._launch_pipeline()
+                self.assertTrue(success)
+                mock_notif.assert_called_once()
+                self.assertIn("352800Hz", mock_notif.call_args[0][1])
+        finally:
+            engine.close()
 
     def test_launch_pipeline_aplay_startup_stderr_capture(self) -> None:
         engine = PlayerEngine()
-        engine.bit_perfect = 1
-        t = TrackInfo(path="/tmp/test.flac", sample_rate=44100, channels=2, pwcat_fmt="s16")
-        engine._track = t
+        try:
+            engine.bit_perfect = 1
+            t = TrackInfo(path="/tmp/test.flac", sample_rate=44100, channels=2, pwcat_fmt="s16")
+            engine._track = t
 
-        mock_aplay_proc = MagicMock()
-        mock_aplay_proc.poll.return_value = 1
-        mock_aplay_proc.returncode = 1
-        mock_aplay_proc.stderr.read.return_value = b"aplay: audio open error: Device or resource busy"
+            mock_aplay_proc = MagicMock()
+            mock_aplay_proc.poll.return_value = 1
+            mock_aplay_proc.returncode = 1
+            mock_aplay_proc.stderr.read.return_value = b"aplay: audio open error: Device or resource busy"
 
-        mock_pwcat_proc = MagicMock()
-        mock_pwcat_proc.poll.return_value = None
+            mock_pwcat_proc = MagicMock()
+            mock_pwcat_proc.poll.return_value = None
 
-        def fake_popen(cmd, **kwargs):
-            if cmd[0] == "aplay":
-                return mock_aplay_proc
-            return mock_pwcat_proc
+            def fake_popen(cmd, **kwargs):
+                if cmd[0] == "aplay":
+                    return mock_aplay_proc
+                return mock_pwcat_proc
 
-        with patch("player.get_dac_hardware_capabilities", return_value=None), \
-             patch("player.send_error_notification") as mock_notif, \
-             patch("subprocess.Popen", side_effect=fake_popen), \
-             patch("shutil.which", return_value="/usr/bin/ffmpeg"):
-            success = engine._launch_pipeline()
-            self.assertTrue(success)
-            mock_notif.assert_called_once()
-            self.assertIn("Device or resource busy", mock_notif.call_args[0][1])
+            with patch("player.get_dac_hardware_capabilities", return_value=None), \
+                 patch("player.send_error_notification") as mock_notif, \
+                 patch("subprocess.Popen", side_effect=fake_popen), \
+                 patch("shutil.which", return_value="/usr/bin/ffmpeg"):
+                success = engine._launch_pipeline()
+                self.assertTrue(success)
+                mock_notif.assert_called_once()
+                self.assertIn("Device or resource busy", mock_notif.call_args[0][1])
+        finally:
+            engine.close()
 
 
 class TestVersion(unittest.TestCase):

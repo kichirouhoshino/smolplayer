@@ -10,12 +10,14 @@ import configparser
 import json
 import os
 import subprocess
+import threading
 from dataclasses import dataclass
 from typing import Any
 
 _CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "smolplayer")
 _CONFIG_FILE = os.path.join(_CONFIG_DIR, "config.ini")
 _STATE_FILE = os.path.join(_CONFIG_DIR, "state.json")
+_state_lock = threading.Lock()
 
 DEFAULT_CONFIG_HEADER = """# smolplayer configuration file
 # Location: ~/.config/smolplayer/config.ini
@@ -280,27 +282,71 @@ def normalize_loop_status(value: Any) -> str:
 
 def load_toggles_state() -> tuple[bool, str]:
     """Load remembered (shuffle, loop_status) state."""
-    try:
-        if os.path.exists(_STATE_FILE):
-            with open(_STATE_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                shuf = bool(data.get("shuffle", False))
-                raw_loop = data.get("loop_status", "None")
-                norm_loop = normalize_loop_status(raw_loop)
-                return shuf, norm_loop
-    except Exception:
-        pass
+    with _state_lock:
+        try:
+            if os.path.exists(_STATE_FILE):
+                with open(_STATE_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    shuf = bool(data.get("shuffle", False))
+                    raw_loop = data.get("loop_status", "None")
+                    norm_loop = normalize_loop_status(raw_loop)
+                    return shuf, norm_loop
+        except Exception:
+            pass
     return False, "None"
 
 
 def save_toggles_state(shuffle: bool, loop_status: str) -> None:
-    """Save (shuffle, loop_status) state for next app launch."""
-    try:
-        os.makedirs(os.path.dirname(_STATE_FILE) or _CONFIG_DIR, exist_ok=True)
-        with open(_STATE_FILE, "w", encoding="utf-8") as f:
-            json.dump({"shuffle": shuffle, "loop_status": loop_status}, f)
-    except Exception:
-        pass
+    """Save (shuffle, loop_status) state for next app launch without clobbering other state."""
+    with _state_lock:
+        try:
+            data = {}
+            if os.path.exists(_STATE_FILE):
+                try:
+                    with open(_STATE_FILE, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                except Exception:
+                    data = {}
+            data["shuffle"] = shuffle
+            data["loop_status"] = loop_status
+            os.makedirs(os.path.dirname(_STATE_FILE) or _CONFIG_DIR, exist_ok=True)
+            with open(_STATE_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+        except Exception:
+            pass
+
+
+def load_volume_state() -> float:
+    """Load remembered volume state (0.0 - 1.0). Defaults to 1.0."""
+    with _state_lock:
+        try:
+            if os.path.exists(_STATE_FILE):
+                with open(_STATE_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if "volume" in data and data["volume"] is not None:
+                        return max(0.0, min(1.0, float(data["volume"])))
+        except Exception:
+            pass
+    return 1.0
+
+
+def save_volume_state(volume: float) -> None:
+    """Save volume state for next app launch without clobbering other state."""
+    with _state_lock:
+        try:
+            data = {}
+            if os.path.exists(_STATE_FILE):
+                try:
+                    with open(_STATE_FILE, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                except Exception:
+                    data = {}
+            data["volume"] = max(0.0, min(1.0, float(volume)))
+            os.makedirs(os.path.dirname(_STATE_FILE) or _CONFIG_DIR, exist_ok=True)
+            with open(_STATE_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+        except Exception:
+            pass
 
 
 def get_config_file_path() -> str:

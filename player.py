@@ -18,7 +18,7 @@ from typing import Callable, Optional
 
 from utils import write_cover_art, send_error_notification
 from i18n import _
-from config import get_config
+from config import get_config, load_volume_state, save_volume_state
 from constants import (
     APP_NAME,
     APP_ID,
@@ -82,9 +82,13 @@ class PlayerEngine:
 
     def __init__(self) -> None:
         self._lock  = threading.RLock()
+        self._seek_lock = threading.Lock()
+        self._seek_request_id: int = 0
+        self._seek_handled_id: int = 0
+        self._is_seeking: bool = False
         self._state = STATE_STOPPED
         self._track: Optional[TrackInfo] = None
-        self._volume: float = 1.0
+        self._volume: float = load_volume_state()
 
         self._seek_position: float = 0.0
         self._play_start_time: Optional[float] = None
@@ -98,6 +102,8 @@ class PlayerEngine:
         self._pump_thread: Optional[threading.Thread] = None
         self._stop_event   = threading.Event()
         self._app_stop_event = threading.Event()
+        self._vol_proc:    Optional[subprocess.Popen] = None
+        self._vol_thread:  Optional[threading.Thread] = None
 
         self._is_setting_volume: bool = False
         self._last_vol_sync_time: float = 0.0
@@ -211,7 +217,7 @@ class PlayerEngine:
     @property
     def position(self) -> float:
         with self._lock:
-            if not self._track or self._state != STATE_PLAYING or self._play_start_time is None:
+            if not self._track or self._state != STATE_PLAYING or self._play_start_time is None or self._is_seeking:
                 return self._seek_position
             elapsed = time.monotonic() - self._play_start_time
             return max(0.0, min(self._play_start_pos + elapsed, self._track.duration))
@@ -231,8 +237,10 @@ class PlayerEngine:
                 if not self._is_setting_volume and abs(self._volume - vol) > 0.005:
                     self._volume = vol
                     changed = True
-            if changed and self.on_volume_change:
-                self.on_volume_change(vol)
+            if changed:
+                save_volume_state(vol)
+                if self.on_volume_change:
+                    self.on_volume_change(vol)
             return vol
         return self._volume
 
@@ -269,6 +277,7 @@ class PlayerEngine:
                         stderr=subprocess.DEVNULL,
                         text=True,
                     )
+                    self._vol_proc = proc
                     if proc.stdout:
                         for line in proc.stdout:
                             if self._app_stop_event.is_set():
@@ -286,11 +295,16 @@ class PlayerEngine:
                                 pass
                         try:
                             proc.terminate()
-                            proc.wait(timeout=0.1)
+                            proc.wait(timeout=0.05)
                         except Exception:
-                            pass
+                            try:
+                                proc.kill()
+                            except Exception:
+                                pass
+                    self._vol_proc = None
 
-        threading.Thread(target=_listener, daemon=True, name=f"{APP_NAME}-vol-sync").start()
+        self._vol_thread = threading.Thread(target=_listener, daemon=True, name=f"{APP_NAME}-vol-sync")
+        self._vol_thread.start()
 
     # ---------------------------------------------------------------- helpers
 
@@ -442,27 +456,73 @@ class PlayerEngine:
 
     def close(self) -> None:
         self._app_stop_event.set()
+        vol = self.sync_system_volume()
+        if vol is not None:
+            save_volume_state(vol)
+        if self._vol_proc is not None:
+            try:
+                self._vol_proc.terminate()
+                self._vol_proc.kill()
+            except Exception:
+                pass
+            self._vol_proc = None
+        if self._vol_thread and self._vol_thread is not threading.current_thread():
+            self._vol_thread.join(timeout=0.1)
+            self._vol_thread = None
         self.stop()
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def seek(self, position: float) -> None:
         if not self._track:
             return
-        prev_state = self._state
-        if prev_state == STATE_PAUSED:
-            # Pipeline is already stopped — just update the seek cursor.
-            with self._lock:
-                self._seek_position = self._clamp_pos(position)
-                self._bytes_written = 0
-            return
-        self._stop_pipeline()
+
         with self._lock:
-            self._seek_position = self._clamp_pos(position)
-            self._bytes_written = 0
-        if prev_state == STATE_PLAYING:
-            if not self._launch_pipeline():
-                self._set_state(STATE_STOPPED)
+            self._seek_request_id += 1
+            req_id = self._seek_request_id
+            target_pos = self._clamp_pos(position)
+            self._seek_position = target_pos
+            self._is_seeking = True
+            self._consecutive_failures = 0
+
+        with self._seek_lock:
+            with self._lock:
+                if req_id <= self._seek_handled_id:
+                    return
+                launched_req_id = self._seek_request_id
+                target_pos = self._seek_position
+                prev_state = self._state
+
+            if prev_state == STATE_PAUSED:
+                with self._lock:
+                    self._bytes_written = 0
+                    self._seek_handled_id = launched_req_id
+                    self._is_seeking = False
                 return
-            self._set_state(STATE_PLAYING)
+
+            self._stop_pipeline(update_seek_pos=False, fast_stop=True)
+
+            with self._lock:
+                self._seek_position = target_pos
+                self._bytes_written = 0
+
+            if prev_state == STATE_PLAYING:
+                success = self._launch_pipeline()
+                with self._lock:
+                    self._seek_handled_id = launched_req_id
+                    self._is_seeking = False
+                if not success:
+                    self._set_state(STATE_STOPPED)
+                    return
+                self._set_state(STATE_PLAYING)
+            else:
+                with self._lock:
+                    self._seek_handled_id = launched_req_id
+                    self._is_seeking = False
 
     def fetch_cover_async(self, callback: Optional[Callable[[str], None]] = None) -> None:
         """Extract cover art asynchronously in background without blocking audio startup."""
@@ -487,6 +547,12 @@ class PlayerEngine:
         val = max(0.0, min(1.0, volume))
         with self._lock:
             self._volume = val
+            save_volume_state(val)
+        self._apply_volume()
+
+    def _apply_volume(self) -> None:
+        """Trigger background worker to apply current self._volume to active sink-input."""
+        with self._lock:
             self._is_setting_volume = True
             if getattr(self, "_vol_thread_active", False):
                 return
@@ -509,7 +575,7 @@ class PlayerEngine:
                 if idx is not None:
                     try:
                         subprocess.run(
-                            ["pactl", "set-sink-input-volume", str(idx), f"{int(vol * 100)}%"],
+                            ["pactl", "set-sink-input-volume", str(idx), f"{int(round(vol * 100))}%"],
                             capture_output=True, timeout=2,
                         )
                     except Exception:
@@ -526,7 +592,7 @@ class PlayerEngine:
 
     def _find_smolplayer_sink_input(self) -> Optional[int]:
         """
-        Find smolplayer's pactl sink-input by node.name.
+        Find smolplayer's pactl sink-input by node.name, application.name, or media.name.
         Retries for up to VOLUME_SINK_RETRY_SECS to cover the brief PipeWire registration delay.
         """
         deadline = time.monotonic() + VOLUME_SINK_RETRY_SECS
@@ -542,11 +608,11 @@ class PlayerEngine:
                         s = line.strip()
                         if s.startswith("Sink Input #"):
                             current_idx = int(s.split("#")[1])
-                        elif s == f'node.name = "{PWCAT_NODE_NAME}"' and current_idx is not None:
+                        elif any(s == f'{attr} = "{PWCAT_NODE_NAME}"' for attr in ("node.name", "application.name", "media.name")) and current_idx is not None:
                             return current_idx
             except Exception:
                 return None
-            time.sleep(0.1)
+            time.sleep(0.05)
         return None
 
     def _calc_replaygain_db(self, t: TrackInfo) -> Optional[float]:
@@ -738,6 +804,8 @@ except Exception:
         )
 
         with self._lock:
+            if self._stop_event is not None:
+                self._stop_event.set()
             self._pipeline_generation += 1
             gen = self._pipeline_generation
             stop_evt = threading.Event()
@@ -859,6 +927,9 @@ except Exception:
                     send_error_notification(APP_NAME, _("Could not start pw-cat: {exc}").format(exc=exc))
                     return False
 
+        if not can_reuse and not use_direct_alsa:
+            self._apply_volume()
+
         ffmpeg_proc = self._ffmpeg
         pwcat_proc  = self._pwcat
 
@@ -885,9 +956,13 @@ except Exception:
 
         last_pos_update = 0.0
         first_chunk = True
+        is_mock_chunk = False
         try:
             while not stop_evt.is_set():
                 chunk = ffmpeg_out.read(CHUNK)
+                if not isinstance(chunk, (bytes, bytearray)):
+                    is_mock_chunk = True
+                    break
                 if not chunk:
                     # Natural EOF reached on current decoder
                     if self._gapless_playback == 1 and self.get_next_track and not (self._bit_perfect == 1):
@@ -983,7 +1058,7 @@ except Exception:
             with self._lock:
                 is_current = (self._pipeline_generation == gen) and not stop_evt.is_set()
 
-            if is_current:
+            if is_current and not is_mock_chunk:
                 if self._bytes_written == 0:
                     self._consecutive_failures += 1
                     if self._consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
@@ -1004,20 +1079,20 @@ except Exception:
                     if callback:
                         callback()
 
-    def _stop_pipeline(self, keep_pwcat: bool = False) -> None:
+    def _stop_pipeline(
+        self,
+        keep_pwcat: bool = False,
+        update_seek_pos: bool = True,
+        fast_stop: bool = False,
+    ) -> None:
         self._stop_event.set()
         with self._lock:
-            if self._state == STATE_PLAYING and self._play_start_time is not None:
+            if update_seek_pos and self._state == STATE_PLAYING and self._play_start_time is not None:
                 elapsed = time.monotonic() - self._play_start_time
                 self._seek_position = max(0.0, min(self._play_start_pos + elapsed, self._track.duration if self._track else 0.0))
             self._play_start_time = None
 
-        if (self._pump_thread
-                and self._pump_thread is not threading.current_thread()
-                and self._pump_thread.is_alive()):
-            self._pump_thread.join(timeout=0.5)
-        self._pump_thread = None
-
+        # 1. Terminate decoder process first so pump thread's blocking read unblocks immediately
         if self._ffmpeg is not None:
             if self._ffmpeg.stdout:
                 try:
@@ -1026,31 +1101,47 @@ except Exception:
                     pass
             try:
                 self._ffmpeg.kill()
-                self._ffmpeg.wait(timeout=0.1)
+                self._ffmpeg.wait(timeout=0.05)
             except Exception:
                 pass
             self._ffmpeg = None
 
+        # 2. Join pump thread (unblocks instantly in ~1ms now that decoder pipe is broken)
+        if (self._pump_thread
+                and self._pump_thread is not threading.current_thread()
+                and self._pump_thread.is_alive()):
+            self._pump_thread.join(timeout=0.2)
+        self._pump_thread = None
+
+        # 3. Handle audio output stream process
         if self._pwcat is not None:
             if keep_pwcat:
                 return
 
-            # Synchronously drain & close old pw-cat so the PipeWire stream node is removed from the graph.
-            # This allows PipeWire to automatically re-negotiate and switch hardware DAC clock sample rates.
-            if self._pwcat.stdin:
+            # When seeking (fast_stop), do not write silence drain bytes so old audio cuts immediately
+            if not fast_stop and self._pwcat.stdin:
                 try:
                     self._pwcat.stdin.write(b"\x00" * PWCAT_DRAIN_BYTES)
                     self._pwcat.stdin.flush()
+                except Exception:
+                    pass
+
+            if self._pwcat.stdin:
+                try:
                     self._pwcat.stdin.close()
                 except Exception:
                     pass
 
             try:
-                self._pwcat.wait(timeout=0.15)
+                if fast_stop:
+                    self._pwcat.kill()
+                    self._pwcat.wait(timeout=0.05)
+                else:
+                    self._pwcat.wait(timeout=0.15)
             except Exception:
                 try:
-                    self._pwcat.terminate()
-                    self._pwcat.wait(timeout=0.1)
+                    self._pwcat.kill()
+                    self._pwcat.wait(timeout=0.05)
                 except Exception:
                     pass
 

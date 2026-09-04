@@ -90,8 +90,6 @@ if _DBUS_OK:
                 "Position": pos_us,
             }
             self.PropertiesChanged(_PLAYER, changed, [])
-            if state in ("playing", "paused"):
-                self.notify_seeked(self._engine.position)
 
         def notify_track(self, info: Optional[TrackInfo], index: int) -> None:
             self.PropertiesChanged(
@@ -106,7 +104,6 @@ if _DBUS_OK:
                 },
                 [],
             )
-            self.notify_seeked(self._engine.position)
 
         def notify_seeked(self, position_secs: float) -> None:
             self.Seeked(_us(position_secs))

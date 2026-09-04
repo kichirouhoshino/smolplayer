@@ -73,7 +73,7 @@ PWCAT_DRAIN_BYTES      = 2048
 # ---------------------------------------------------------------------------
 
 VOLUME_SYNC_INTERVAL   = 0.20             # seconds between passive polls
-VOLUME_SINK_RETRY_SECS = 0.5             # how long to retry finding sink-input
+VOLUME_SINK_RETRY_SECS = 1.5             # how long to retry finding sink-input
 
 # ---------------------------------------------------------------------------
 # Desktop notifications

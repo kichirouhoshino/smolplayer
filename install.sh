@@ -95,8 +95,8 @@ cp -f icon-128.png "${ICON_BASE}/128x128/apps/${APP_ID}.png"
 cp -f icon-256.png "${ICON_BASE}/256x256/apps/${APP_ID}.png"
 cp -f icon-512.png "${ICON_BASE}/512x512/apps/${APP_ID}.png"
 
-# Copy desktop entry and metainfo
-cp -f io.github.roddy.SmolPlayer.desktop "$DESKTOP_FILE"
+# Copy desktop entry and metainfo (using absolute wrapper path for reliable desktop environment launching)
+sed "s|^Exec=smolplayer|Exec=${WRAPPER_BIN}|g" io.github.roddy.SmolPlayer.desktop > "$DESKTOP_FILE"
 cp -f io.github.roddy.SmolPlayer.metainfo.xml "$METAINFO_FILE"
 
 # Update desktop & icon databases
